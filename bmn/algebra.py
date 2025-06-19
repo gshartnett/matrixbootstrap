@@ -2,7 +2,9 @@ from numbers import Number
 from typing import (
     Self,
     Union,
-    Optional
+    Tuple,
+    Optional,
+    Dict
 )
 import pickle
 import numpy as np
@@ -12,32 +14,49 @@ TOL = 1e-12
 
 class AbstractMatrixOperator:
     """
-    Abstract matrix operator class.
+    Abstract base class for matrix operators.
+
+    This class provides common functionality for matrix operator arithmetic
+    including addition, subtraction, scalar multiplication, and comparison.
+
+    Parameters
+    ----------
+    data : dict
+        Dictionary mapping operator keys to coefficients
     """
 
-    def __init__(self, data):
+    def __init__(self, data: Dict) -> None:
         self.data = data
 
-    def __contains__(self, other: Self):
+    def __contains__(self, other: Self) -> bool:
+        """Check if operator is contained in this operator's data."""
         return other in self.data
 
     def __iter__(self):
+        """Iterate over (operator, coefficient) pairs."""
         for key, value in self.data.items():
             yield key, value
+
+    def copy(self) -> Self:
+        """Create a deep copy of this operator."""
+        return self.__class__(data={k: v for k, v in self})
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(data={self.data})"
 
-    def copy(self):
-        return self.__class__(data={k: v for k, v in self})
-
     def __add__(self, other: Self) -> Self:
+        """Add two operators of the same type."""
         if not isinstance(other, self.__class__):
-            raise ValueError(f"Cannot add {type(other)} and {self.__class__.__name__}")
+            raise TypeError(
+                f"Cannot add {type(other).__name__} to {self.__class__.__name__}. "
+                f"Both operands must be of type {self.__class__.__name__}"
+            )
+
         new_data = self.data.copy()
         for op, coeff in other:
             new_data[op] = new_data.get(op, 0) + coeff
-        return self.__class__(data=new_data)
+
+        return self.__class__(data=new_data, tol=self.tol)
 
     def __sub__(self, other: Self) -> Self:
         if not isinstance(other, self.__class__):
@@ -64,9 +83,21 @@ class AbstractMatrixOperator:
         raise NotImplementedError()
 
     def __eq__(self, other: Self) -> bool:
+        """Check equality with tolerance for numerical coefficients."""
         if not isinstance(other, type(self)):
             return False
-        return self.data == {k: v for k, v in other}
+
+        # Quick check for different lengths
+        if len(self.data) != len(other.data):
+            return False
+
+        # Check each coefficient with tolerance
+        for op, coeff in self.data.items():
+            other_coeff = other.data.get(op, 0)
+            if not np.isclose(coeff, other_coeff, atol=self.tol):
+                return False
+
+        return True
 
     def __len__(self) -> int:
         return len(self.data)
@@ -82,44 +113,66 @@ class MatrixOperator(AbstractMatrixOperator):
     """
     Class for un-traced matrix operators.
 
-    TODO
-    What about case of constant or zero operator?
-    build some unit tests to check the basic operation
+    Parameters
+    ----------
+    data : Dict[Tuple[str, ...], Number]
+        Dictionary mapping operator tuples to coefficients
+    tol : float, optional
+        Tolerance for coefficient filtering, by default TOL
     """
 
-    def __init__(self, data: dict[tuple : list[Number]], tol: float = TOL):
+    def __init__(self, data: Dict[Union[Tuple[str, ...], str], Number], tol: float = TOL) -> None:
         super().__init__(data)
         self.tol = tol
         self.data = {}
 
-        # validate the data
+        # Validate and process the data
         for op, coeff in data.items():
+            if not isinstance(coeff, Number):
+                raise TypeError(f"Coefficient must be a number, got {type(coeff)}")
+
             if np.abs(coeff) > self.tol:
                 if isinstance(op, tuple):
+                    # Validate that all elements in tuple are strings
+                    if not all(isinstance(elem, str) for elem in op):
+                        raise ValueError("All operator elements must be strings")
                     self.data[op] = coeff
                 elif isinstance(op, str):
                     self.data[(op,)] = coeff
                 else:
-                    raise ValueError(
-                        "All operators must be tuples of strings, e.g. (X, Y, P)."
+                    raise TypeError(
+                        f"Operator keys must be tuples of strings or strings, got {type(op)}"
                     )
 
-        # set some useful attributes
+        self._update_attributes()
+
+    def _update_attributes(self) -> None:
+        """Update derived attributes after data changes."""
         self.operators = list(self.data.keys())
         self.coeffs = list(self.data.values())
         self.degrees = [len(op) for op in self.operators]
-        if self.degrees == []:
-            self.max_degree = 0
-        else:
-            self.max_degree = max(self.degrees)
+        self.max_degree = max(self.degrees) if self.degrees else 0
 
     def __str__(self) -> str:
-        x = ""
-        for idx, (coeff, op) in enumerate(zip(self.coeffs, self.operators)):
-            x += f"{coeff}" + f" {op}"
-            if idx != len(self.operators) - 1:
-                x += " + "
-        return x
+        """Return a human-readable string representation."""
+        if not self.data:
+            return "0"
+
+        terms = []
+        for coeff, op in zip(self.coeffs, self.operators):
+            op_str = "".join(op) if op else "1"
+
+            # Format coefficient nicely
+            if np.isclose(coeff, 1.0):
+                term = op_str
+            elif np.isclose(coeff, -1.0):
+                term = f"-{op_str}"
+            else:
+                term = f"{coeff:.4g}{op_str}"
+            terms.append(term)
+
+        result = " + ".join(terms)
+        return result.replace("+ -", "- ")
 
     def __mul__(self, other: Union[Self, Number]):
         if not isinstance(other, (Number, self.__class__)):
@@ -150,6 +203,23 @@ class MatrixOperator(AbstractMatrixOperator):
 
     def trace(self):
         return SingleTraceOperator(data={k: v for k, v in self})
+
+    @classmethod
+    def zero(cls, tol: float = TOL) -> Self:
+        """Create a zero operator."""
+        return cls(data={}, tol=tol)
+
+    @classmethod
+    def identity(cls, tol: float = TOL) -> Self:
+        """Create an identity operator."""
+        return cls(data={(): 1}, tol=tol)
+
+    @classmethod
+    def from_string(cls, op_string: str, coeff: Number = 1, tol: float = TOL) -> Self:
+        """Create operator from string representation."""
+        if not op_string:
+            return cls.identity(tol=tol)
+        return cls(data={(op_string,): coeff}, tol=tol)
 
 
 class SingleTraceOperator(MatrixOperator):
@@ -282,8 +352,20 @@ class MatrixSystem:
             )
         self.commutation_rules = self.build_commutation_rules(commutation_rules_concise)
 
-    def hermitian_conjugate(self, operator: MatrixOperator) -> Self:
-        # assumes operator basis is Hermitian or anti-Hermitian
+    def hermitian_conjugate(self, operator: MatrixOperator) -> MatrixOperator:
+        """
+        Compute the Hermitian conjugate of a matrix operator.
+
+        Parameters
+        ----------
+        operator : MatrixOperator
+            The operator to take the Hermitian conjugate of
+
+        Returns
+        -------
+        MatrixOperator
+            The Hermitian conjugate operator
+        """
         data = {}
         for op, coeff in operator:
             reversed_op = op[::-1]
@@ -291,7 +373,7 @@ class MatrixSystem:
                 1 * (not self.hermitian_dict[op_str]) for op_str in op
             )
             data[reversed_op] = (-1) ** num_antihermitian * np.conjugate(coeff)
-        return operator.__class__(data=data)
+        return operator.__class__(data=data, tol=operator.tol)
 
     def build_commutation_rules(self, commutation_rules_concise):
         """
