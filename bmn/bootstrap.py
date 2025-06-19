@@ -267,7 +267,7 @@ class BootstrapSystem:
     def double_trace_to_coefficient_matrix(
         self, dt_operator: DoubleTraceOperator
     ) -> coo_matrix:
-        """
+        r"""
         Use large-N factorization <tr(O1)tr(O2)> = <tr(O1)><tr(O2)> to
         represent the double-trace operator as a quadratic expression
         of single trace operators, \sum_{ij} M_{ij} v_i v_j.
