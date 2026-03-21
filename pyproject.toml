@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "bmnsim"
 version = "0.1.0"
-description = "BMN Project"
+description = "Matrix bootstrap for quantum mechanical matrix models"
 authors = ["Gavin Hartnett <gshartnett@gmail.com>"]
 readme = "README.md"
 packages = [{include = "bmn"}]
@@ -9,6 +9,21 @@ packages = [{include = "bmn"}]
 
 [tool.poetry.dependencies]
 python = ">=3.10, <3.13"
+numpy = ">=1.24"
+scipy = ">=1.10"
+cvxpy = ">=1.3"
+torch = ">=2.0"
+PyYAML = ">=6.0"
+fire = ">=0.5"
+psutil = ">=5.9"
+sparseqr = ">=1.0"
+matplotlib = ">=3.7"
+pandas = ">=2.0"
+cycler = ">=0.11"
+
+
+[tool.poetry.dev-dependencies]
+pytest = ">=7.0"
 
 
 [tool.black]
