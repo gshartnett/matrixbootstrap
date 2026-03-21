@@ -8,9 +8,9 @@ J. Res. Natl. Bur. Stand., Sect. B 79 (1975): 49.
 """
 
 from sparseqr import qr
-from bmn.linear_algebra import create_sparse_matrix_from_dict
-from bmn.bootstrap import BootstrapSystem
-from bmn.models import MiniBMN
+from matrixbootstrap.linear_algebra import create_sparse_matrix_from_dict
+from matrixbootstrap.bootstrap import BootstrapSystem
+from matrixbootstrap.models import MiniBMN
 
 d = 3
 L = 4

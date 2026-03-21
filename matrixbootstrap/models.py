@@ -1,5 +1,5 @@
 import numpy as np
-from bmn.algebra import MatrixSystem, SingleTraceOperator, MatrixOperator
+from matrixbootstrap.algebra import MatrixSystem, SingleTraceOperator, MatrixOperator
 
 
 class MatrixModel():

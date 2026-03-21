@@ -1,5 +1,5 @@
 import numpy as np
-from bmn.config_utils import generate_configs_two_matrix, run_all_configs, run_bootstrap_from_config
+from matrixbootstrap.config_utils import generate_configs_two_matrix, run_all_configs, run_bootstrap_from_config
 
 
 ## energy held fixed

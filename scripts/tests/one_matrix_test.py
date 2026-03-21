@@ -1,5 +1,5 @@
-from bmn.brezin import compute_Brezin_energy
-from bmn.config_utils import generate_config_one_matrix, run_all_configs
+from matrixbootstrap.brezin import compute_Brezin_energy
+from matrixbootstrap.config_utils import generate_config_one_matrix, run_all_configs
 
 L = 3
 g2 = 1

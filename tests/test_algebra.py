@@ -1,4 +1,4 @@
-from bmn.algebra import (
+from matrixbootstrap.algebra import (
     MatrixOperator,
     MatrixSystem,
     SingleTraceOperator,

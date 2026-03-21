@@ -18,8 +18,8 @@ from scipy.interpolate import (
     griddata,
 )
 
-from bmn.born_oppenheimer import BornOppenheimer
-from bmn.brezin import compute_Brezin_energy
+from matrixbootstrap.born_oppenheimer import BornOppenheimer
+from matrixbootstrap.brezin import compute_Brezin_energy
 
 plt.rcParams["xtick.direction"] = "in"
 plt.rcParams["ytick.direction"] = "in"

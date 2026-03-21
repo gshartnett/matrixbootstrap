@@ -8,10 +8,10 @@ from scipy.sparse import (
     vstack,
 )
 
-from bmn.algebra import SingleTraceOperator
-from bmn.bootstrap import BootstrapSystem
-from bmn.debug_utils import debug
-from bmn.linear_algebra import get_null_space_dense
+from matrixbootstrap.algebra import SingleTraceOperator
+from matrixbootstrap.bootstrap import BootstrapSystem
+from matrixbootstrap.debug_utils import debug
+from matrixbootstrap.linear_algebra import get_null_space_dense
 
 
 def get_null_space_quantities(

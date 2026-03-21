@@ -1,5 +1,5 @@
 import numpy as np
-from bmn.config_utils import generate_configs_one_matrix, run_all_configs, generate_configs_bfss
+from matrixbootstrap.config_utils import generate_configs_one_matrix, run_all_configs, generate_configs_bfss
 
 L = 3
 dir = f"OneMatrix_L_{L}_play"

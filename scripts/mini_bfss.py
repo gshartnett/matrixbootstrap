@@ -1,5 +1,5 @@
 import numpy as np
-from bmn.config_utils import generate_configs_bfss, run_all_configs
+from matrixbootstrap.config_utils import generate_configs_bfss, run_all_configs
 
 ## energy held fixed
 L = 4

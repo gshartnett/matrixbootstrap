@@ -1,5 +1,5 @@
 import numpy as np
-from bmn.config_utils import generate_config_two_matrix, run_all_configs
+from matrixbootstrap.config_utils import generate_config_two_matrix, run_all_configs
 
 L = 3
 g2 = 1.0

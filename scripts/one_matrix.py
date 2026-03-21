@@ -1,5 +1,5 @@
 import numpy as np
-from bmn.config_utils import generate_configs_one_matrix, run_all_configs
+from matrixbootstrap.config_utils import generate_configs_one_matrix, run_all_configs
 
 n_grid = 20
 g4_max = 16
