@@ -1,8 +1,12 @@
+import logging
+
 import fire
 import numpy as np
 from scipy.integrate import trapezoid as trapz
 from scipy.optimize import minimize
 from scipy.optimize._optimize import OptimizeResult
+
+logger = logging.getLogger(__name__)
 
 
 class BornOppenheimer:
@@ -202,13 +206,13 @@ def main(m: float = 1, g: float = 1, npoints: int = 100):
     result = born_oppenheimer.solve(x_grid=x_grid)
     optimal_energy_me = result.fun
 
-    print(
+    logger.info(
         f"Minimum BO energy for m={m}, g={g}: E={optimal_energy_HHK:.4f} (HHK conventions)"
     )
-    print(
+    logger.info(
         f"Minimum BO energy for g2={born_oppenheimer.g2}, g4={born_oppenheimer.g4}: E={optimal_energy_me:.4f} (my conventions)"
     )
-    print(
+    logger.info(
         f"The results should be off by a factor of two: diff={(optimal_energy_me - optimal_energy_HHK / 2):.4e}."
     )
 
@@ -218,8 +222,8 @@ def main(m: float = 1, g: float = 1, npoints: int = 100):
     born_oppenheimer = BornOppenheimer(g2=g2, g4=g4)
     result = born_oppenheimer.solve(x_grid=x_grid)
     optimal_energy_me = result.fun
-    print(
-        f"\nMinimum BO energy for g2={born_oppenheimer.g2}, g4={born_oppenheimer.g4}: E={optimal_energy_me:.4f} (my conventions)"
+    logger.info(
+        f"Minimum BO energy for g2={born_oppenheimer.g2}, g4={born_oppenheimer.g4}: E={optimal_energy_me:.4f} (my conventions)"
     )
 
 

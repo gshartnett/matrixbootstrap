@@ -190,7 +190,6 @@ class SpecialUnitaryGroup:
                 )
 
                 if not np.allclose(term1, term2):
-                    print(i, j)
-                    print(term1)
-                    print(term2)
-                    raise AssertionError
+                    raise AssertionError(
+                        f"Lie algebra relation failed for i={i}, j={j}: term1={term1}, term2={term2}"
+                    )

@@ -4,9 +4,13 @@ Code for computing the energy in the matrix quantum mechanical model studied in 
     Brézin, E., Itzykson, C., Parisi, G. et al. Planar diagrams. Commun.Math. Phys. 59, 35–51 (1978). https://doi.org/10.1007/BF01614153
 """
 
+import logging
+
 import numpy as np
 from scipy.integrate import quad
 from scipy.optimize import root_scalar
+
+logger = logging.getLogger(__name__)
 
 
 def fermi_level_integrand(x: float, eps: float, g_value: float) -> float:
@@ -179,12 +183,12 @@ if __name__ == "__main__":
         # 1000: 5.915, # for this extreme value the code fails
     }
 
-    print(
+    logger.info(
         "Compare the values listed in Table 3 of Brezin et al against the values computed using this code:"
     )
     for g, table_val in table_values.items():
         computed_val = compute_Brezin_energy(g)
         error = np.abs(computed_val - table_val)
-        print(
+        logger.info(
             f"  g = {g} | table 3 value = {table_val} | computed value = {computed_val:.03f} | error = {error:.4e}"
         )

@@ -34,7 +34,7 @@ def solve_bootstrap(
     early_stopping_tol=1e-3,
 ) -> np.ndarray:
 
-    print(f"torch device: {device}")
+    logger.info(f"torch device: {device}")
 
     if PRNG_seed is not None:
         np.random.seed(PRNG_seed)
@@ -202,11 +202,6 @@ def solve_bootstrap(
 
     param_null.requires_grad = True
     param_particular = torch.tensor(param_particular).type(torch_dtype).to(device)
-
-    print(
-        f"Axb_loss={Axb_loss(param_null=param_null, param_particular=param_particular)}"
-    )
-    print(f"A @ param = {A @ (null_space_projector @ param_null + param_particular)}")
 
     # optimizer
     optimizer = optim.Adam([param_null], lr=lr)
