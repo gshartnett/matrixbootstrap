@@ -113,10 +113,10 @@ def sdp_minimize(
         bootstrap_table_sparse_real = bootstrap_table_sparse.real.astype(np.float64)
         bootstrap_table_sparse_imag = bootstrap_table_sparse.imag.astype(np.float64)
         matrix_real = cp.reshape(
-            bootstrap_table_sparse_real @ param, (matrix_dim, matrix_dim)
+            bootstrap_table_sparse_real @ param, (matrix_dim, matrix_dim), order="F"
         )
         matrix_imag = cp.reshape(
-            bootstrap_table_sparse_imag @ param, (matrix_dim, matrix_dim)
+            bootstrap_table_sparse_imag @ param, (matrix_dim, matrix_dim), order="F"
         )
         matrix_block = cp.bmat(
             [[matrix_real, -matrix_imag], [matrix_imag, matrix_real]]
@@ -127,6 +127,7 @@ def sdp_minimize(
             cp.reshape(
                 bootstrap_table_sparse.real.astype(np.float64) @ param,
                 (matrix_dim, matrix_dim),
+                order="F",
             )
             >> 0
         ]
@@ -312,10 +313,10 @@ def sdp_minimize_null(
         bootstrap_table_sparse_real = bootstrap_table_sparse.real.astype(np.float64)
         bootstrap_table_sparse_imag = bootstrap_table_sparse.imag.astype(np.float64)
         matrix_real = cp.reshape(
-            bootstrap_table_sparse_real @ param, (matrix_dim, matrix_dim)
+            bootstrap_table_sparse_real @ param, (matrix_dim, matrix_dim), order="F"
         )
         matrix_imag = cp.reshape(
-            bootstrap_table_sparse_imag @ param, (matrix_dim, matrix_dim)
+            bootstrap_table_sparse_imag @ param, (matrix_dim, matrix_dim), order="F"
         )
         matrix_block = cp.bmat(
             [[matrix_real, -matrix_imag], [matrix_imag, matrix_real]]
@@ -326,6 +327,7 @@ def sdp_minimize_null(
             cp.reshape(
                 bootstrap_table_sparse.real.astype(np.float64) @ param,
                 (matrix_dim, matrix_dim),
+                order="F",
             )
             >> 0
         ]
