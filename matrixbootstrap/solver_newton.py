@@ -507,14 +507,20 @@ def solve_bootstrap(
     # iterate over steps
     for step in range(maxiters):
 
-        logger.debug("step %d/%d (radius=%.4e, reg=%.4e)", step + 1, maxiters, radius, reg)
-
         # build the Newton method update for the quadratic constraints, which
         # produces a second inhomogenous linear equation A' x = b'
         # here, the new equation is grad * (new_param - param) + val = 0
         # this equation will be imposed as a penalty
         quad_cons_val, quad_cons_grad = get_quadratic_constraint_vector(
             quadratic_constraints_numerical, param_array, compute_grad=True
+        )
+        logger.debug(
+            "step %d/%d: objective=%.4f, max_quad_violation=%.4e, ||param||=%.4e, radius=%.4e, reg=%.4e",
+            step + 1, maxiters,
+            linear_objective_vector @ param_array if linear_objective_vector is not None else float("nan"),
+            np.max(np.abs(quad_cons_val)),
+            np.linalg.norm(param_array),
+            radius, reg,
         )
 
         # build the Ax=b constraints
