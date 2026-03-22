@@ -8,10 +8,13 @@ from scipy.sparse import (
     vstack,
 )
 
+import logging
+
 from matrixbootstrap.algebra import SingleTraceOperator
 from matrixbootstrap.bootstrap import BootstrapSystem
-from matrixbootstrap.debug_utils import debug
 from matrixbootstrap.linear_algebra import get_null_space_dense
+
+logger = logging.getLogger(__name__)
 
 
 def get_null_space_quantities(
@@ -148,7 +151,7 @@ def sdp_init(
         )
 
     if str(prob.status) != "optimal":
-        debug("WARNING: sdp_init unexpected status: " + prob.status)
+        logger.warning("sdp_init unexpected status: %s", prob.status)
 
     return param.value
 
@@ -217,7 +220,7 @@ def sdp_relax(
         )
 
     if str(prob.status) != "optimal":
-        debug("WARNING: sdp_relax unexpected status: " + prob.status)
+        logger.warning("sdp_relax unexpected status: %s", prob.status)
 
     return param.value
 
@@ -295,7 +298,7 @@ def sdp_minimize(
         )
 
     if str(prob.status) != "optimal":
-        debug("WARNING: sdp_minimize unexpected status: " + prob.status)
+        logger.warning("sdp_minimize unexpected status: %s", prob.status)
 
     if param.value is None:
         return None, None
@@ -306,13 +309,9 @@ def sdp_minimize(
     min_bootstrap_eigenvalue = np.linalg.eigvalsh(
         (bootstrap_table_sparse @ param.value).reshape(size, size)
     )[0]
-    debug(f"sdp_minimize status after maxiters_cvxpy {maxiters}: {prob.status}")
-    #debug(f"sdp_minimize ||x - init||: {ball_constraint:.4e}")
-    #debug(f"sdp_minimize ||x||: {np.linalg.norm(param.value):.4e}")
-    #debug(f"sdp_minimize ||A x - b||: {violation_of_linear_constraints:.4e}")
-    #debug(
-    #    f"sdp_minimize bootstrap matrix min eigenvalue: {min_bootstrap_eigenvalue:.4e}"
-    #)
+    logger.debug("sdp_minimize status (maxiters=%d): %s", maxiters, prob.status)
+    logger.debug("sdp_minimize ||A x - b||: %.4e", violation_of_linear_constraints)
+    logger.debug("sdp_minimize bootstrap matrix min eigenvalue: %.4e", min_bootstrap_eigenvalue)
 
     optimization_result = {
         "solver": cvxpy_solver,
@@ -488,7 +487,7 @@ def solve_bootstrap(
 
     if PRNG_seed is not None:
         np.random.seed(PRNG_seed)
-        debug(f"setting PRNG seed to {PRNG_seed}")
+        logger.debug("Setting PRNG seed to %s", PRNG_seed)
 
     # get the bootstrap constraints necessary for the optimization
     # linear constraints
@@ -505,10 +504,9 @@ def solve_bootstrap(
         bootstrap.build_bootstrap_table()
     bootstrap_table_sparse = bootstrap.bootstrap_table_sparse
 
-    debug(f"Final bootstrap parameter dimension: {bootstrap.param_dim_null}")
+    logger.debug("Bootstrap parameter dimension: %d", bootstrap.param_dim_null)
 
     # initialize the variable vector
-    debug(f"Initializing randomly")
     init_array = init_scale * np.random.normal(size=bootstrap.param_dim_null)
 
     # map the single trace operator whose expectation value we wish to minimize to a coefficient vector
@@ -557,7 +555,7 @@ def solve_bootstrap(
 
     # optimization steps
     for step in range(maxiters):
-        debug(f"\n\nstep = {step+1}/{maxiters}")
+        logger.debug("step %d/%d (radius=%.4e, mu=%.4e)", step + 1, maxiters, radius, mu)
 
         # one step
         null_space_projector, param_particular, A, b = get_null_space_quantities(
@@ -614,9 +612,7 @@ def solve_bootstrap(
         if param_new is None:
             # wrongly infeasible
             radius *= relax_rate  # GSH used to be 0.9
-            debug(
-                f"  wrongly infeasible, changing radius from R={radius/relax_rate} to R={radius}"
-            )
+            logger.warning("Wrongly infeasible at step %d, expanding radius to %.4e", step + 1, radius)
             continue
 
         # compute constraint violations for candidate new parameters
@@ -634,15 +630,12 @@ def solve_bootstrap(
             )
         )[0]
 
-        debug("  candidate new parameter vector:")
-        debug(f"  radius = {radius:.4e}")
-        debug(f"  max_linear_constraint_violation = {max_linear_constraint_violation:.4e}")
-        debug(f"  max_quad_constraint_violation = {max_quadratic_constraint_violation:.4e}")
-        debug(f"  min_bootstrap_eigenvalue = {min_bootstrap_eigenvalue:.4e}")
-        debug(f"  loss = {loss(param_new):.4f}")
-        debug(f"  ||param_new|| = {np.linalg.norm(param_new):.4e}")
-        debug(f"  ||param_new - param|| = {np.linalg.norm(param_new - param):.4e}")
-        debug(f"  param[0:10] = {param_new[0:10]}")
+        logger.info(
+            "step %d/%d: loss=%.4f, max_lin_viol=%.4e, max_quad_viol=%.4e, min_eig=%.4e, R=%.4e",
+            step + 1, maxiters, loss(param_new),
+            max_linear_constraint_violation, max_quadratic_constraint_violation,
+            min_bootstrap_eigenvalue, radius,
+        )
 
         if (
             step > 4
@@ -651,7 +644,7 @@ def solve_bootstrap(
             and min_bootstrap_eigenvalue > -eps
             and np.linalg.norm(param_new - param) < eps * radius
         ):
-            debug("Accuracy goal achieved.")
+            logger.info("Accuracy goal achieved at step %d.", step + 1)
             return param_new, optimization_result
 
         # compute the changes in the merit function and decide whether the step should be accepted
@@ -673,7 +666,7 @@ def solve_bootstrap(
         if -dcons > eps:
             old_mu = mu
             mu = max(mu, -2 * dloss / dcons)
-            debug(f"  adjusting mu from mu = {old_mu:.4e} to mu = {mu:.4e}")
+            logger.debug("  adjusting mu from %.4e to %.4e", old_mu, mu)
 
         # the merit function is -loss(param) - reg * norm(param) - mu * norm(constraint vector)
         acred = -dcons  # actual constraint reduction
@@ -688,20 +681,14 @@ def solve_bootstrap(
             # accept
             if max_linear_constraint_violation < eps and min_bootstrap_eigenvalue > -eps:
                 radius *= 2 - relax_rate  # GSH used to be 1.2
-                debug(
-                    f"  accept, adjusting R from R = {radius/(2 - relax_rate):.4e} to R = {radius:.4e}"
-                )
+                logger.debug("  step accepted, expanding R to %.4e", radius)
             param = param_new
 
         else:
             # reject
             old_radius = radius
             radius = relax_rate * np.linalg.norm(param_new - param)
-            debug(f"  reject, adjusting R from R = {old_radius} to R = {radius}")
+            logger.debug("  step rejected, shrinking R from %.4e to %.4e", old_radius, radius)
 
-    debug(
-        "WARNING: minimize did not converge to precision {:.5f} within {} steps.".format(
-            eps, maxiters
-        )
-    )
+    logger.warning("minimize did not converge to precision %.5f within %d steps.", eps, maxiters)
     return param, optimization_result

@@ -12,7 +12,9 @@ from scipy.sparse import (
 from scipy.sparse.linalg import svds
 from sparseqr import qr
 
-from matrixbootstrap.debug_utils import debug
+import logging
+
+logger = logging.getLogger(__name__)
 
 TOL = 1e-9
 
@@ -128,8 +130,12 @@ def get_null_space_sparse(matrix, tol: float = TOL):
     Returns:
         null (sparse matrix): a basis of the null space, of shape (N, K)
     """
+    logger.debug("get_null_space_sparse: input shape %s", matrix.shape)
     q, _, _, rank = qr(matrix.transpose())
     null_space_matrix = csc_matrix(q)[:, rank:]
+    logger.debug(
+        "get_null_space_sparse: null space shape %s (rank=%d)", null_space_matrix.shape, rank
+    )
     verification_result = matrix @ null_space_matrix
     violation = np.max(np.abs(verification_result))
     if not violation <= tol:
@@ -147,12 +153,11 @@ def get_row_space_sparse(matrix, tol: float = TOL):
     Returns:
             r (sparse matrix): a basis of the row space, of shape (K, N)
     """
-    # debug("range_space: input shape {}".format(mat.shape))
+    logger.debug("get_row_space_sparse: input shape %s", matrix.shape)
     q, _, _, rank = qr(matrix.transpose())
     r = csc_matrix(q)[:, :rank].transpose()
-    # sanity check
     assert r.shape[1] == matrix.shape[1], "dimension mismatch"
-    # debug("range_space: solution shape {}".format(r.shape))
+    logger.debug("get_row_space_sparse: row space shape %s (rank=%d)", r.shape, rank)
     return r
 
 

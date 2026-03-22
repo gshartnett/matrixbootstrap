@@ -11,7 +11,9 @@ from torch.optim.lr_scheduler import ExponentialLR
 
 from matrixbootstrap.algebra import SingleTraceOperator
 from matrixbootstrap.bootstrap import BootstrapSystem
-from matrixbootstrap.debug_utils import debug
+import logging
+
+logger = logging.getLogger(__name__)
 from matrixbootstrap.solver_trustregion import (
     get_quadratic_constraint_vector_sparse as get_quadratic_constraint_vector,
 )
@@ -43,7 +45,7 @@ def solve_bootstrap(
     if PRNG_seed is not None:
         np.random.seed(PRNG_seed)
         torch.manual_seed(PRNG_seed)
-        debug(f"setting PRNG seed to {PRNG_seed}")
+        logger.debug(f"setting PRNG seed to {PRNG_seed}")
 
     # get the bootstrap constraints necessary for the optimization
     # linear constraints
@@ -57,7 +59,7 @@ def solve_bootstrap(
     # bootstrap table
     if bootstrap.bootstrap_table_sparse is None:
         bootstrap.build_bootstrap_table()
-    debug(f"Final bootstrap parameter dimension: {bootstrap.param_dim_null}")
+    logger.debug("Bootstrap parameter dimension: %d", bootstrap.param_dim_null)
 
     # build the Ax = b constraints
     A, b = [], []
@@ -180,11 +182,11 @@ def solve_bootstrap(
         init = init_scale * np.random.randn(bootstrap.param_dim_null)
         param_particular = np.linalg.lstsq(A.cpu().numpy(), b.cpu().numpy(), rcond=None)[0]
         param_null = init
-        debug(f"Initializing param to be the least squares solution of Ax=b plus Gaussian noise with scale = {init_scale}.")
+        logger.debug(f"Initializing param to be the least squares solution of Ax=b plus Gaussian noise with scale = {init_scale}.")
     else:
         raise ValueError
         param_null = init
-        debug(f"Initializing as param={init}")
+        logger.debug(f"Initializing as param={init}")
 
     param_null = torch.tensor(param_null).type(torch_dtype).to(device)
     param_null = null_space_projector @ param_null
@@ -218,7 +220,7 @@ def solve_bootstrap(
                 quad_constraint_violation_max = quadratic_constraint_max(param_null=param_null, param_particular=param_particular).detach().cpu().item()
                 param_norm = torch.linalg.norm(get_full_param(param_null, param_particular))
 
-                debug(
+                logger.debug(
                     f"epoch: {epoch+1}/{num_epochs}, lr: {scheduler.get_last_lr()[0]:.3e} total_loss: {total_loss:.3e}: op_loss: {operator_value:.5f}, ||x||: {param_norm:.3e}, ||Ax-b||: {violation_of_linear_constraints:.3e}, min_eig: {min_bootstrap_eigenvalue:.3e}, ||quad cons||: {quad_constraint_violation_norm:.3e}"
                 )
 
