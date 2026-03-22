@@ -14,9 +14,7 @@ energy = 1.5
 st_operator_to_minimize = "x_2"
 
 generate_config_bfss(
-    config_filename="test",
     config_dir=f"MiniBFSS_L_{L}_test",
-    checkpoint_path=f"MiniBFSS_L_{L}_symmetric",
     max_degree_L=L,
     load_from_previously_computed=True,
     odd_degree_vanish=True,

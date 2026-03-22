@@ -32,7 +32,6 @@ for L in [3, 4]:
                 if (g6 > 0) or (g6 == 0 and g4 > 0):
 
                     generate_config_one_matrix(
-                        config_filename=f"g2_{str(g2)}_g4_{str(g4)}_g6_{str(g6)}",
                         config_dir=f"OneMatrix_L_{L}",
                         g2=g2,
                         g4=g4,

@@ -15,9 +15,7 @@ energy = 1.5
 st_operator_to_minimize = "x_2"
 
 generate_config_bmn(
-    config_filename="test",
     config_dir=f"MiniBMN_L_{L}_test",
-    checkpoint_path=f"MiniBMN_L_{L}_symmetric_nu_{nu}_lamb_{lambd}",
     nu=nu,
     lambd=lambd,
     max_degree_L=L,

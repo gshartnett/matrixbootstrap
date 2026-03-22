@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 import os
@@ -44,7 +45,6 @@ bootstrap_keys = [
     "symmetry_method",
     "impose_gauge_symmetry",
     "load_from_previously_computed",
-    "checkpoint_path",
 ]
 
 optimization_keys_newton = [
@@ -147,7 +147,6 @@ def generate_bootstrap_config(
     impose_symmetries=True,
     load_from_previously_computed=False,
     impose_gauge_symmetry=True,
-    checkpoint_path=None,
     symmetry_method="complete",
 ):
 
@@ -161,15 +160,18 @@ def generate_bootstrap_config(
         "symmetry_method": symmetry_method,
         "impose_gauge_symmetry": impose_gauge_symmetry,
         "load_from_previously_computed": load_from_previously_computed,
-        "checkpoint_path": checkpoint_path,
     }
 
     return bootstrap_config_dict
 
 
-def generate_config_one_matrix(
-    config_filename, config_dir, g2, g4, g6, optimization_method, **kwargs
-):
+def _config_id(config_data: dict) -> str:
+    """Generate a short deterministic hex ID from config content."""
+    content = json.dumps(config_data, sort_keys=True)
+    return hashlib.sha256(content.encode()).hexdigest()[:12]
+
+
+def generate_config_one_matrix(config_dir, g2, g4, g6, optimization_method, **kwargs):
 
     if optimization_method not in ["newton", "pytorch"]:
         raise ValueError(f"optimization method {optimization_method} not recognized.")
@@ -207,17 +209,15 @@ def generate_config_one_matrix(
         "optimizer": optimization_config_dict,
     }
 
-    # write to yaml
+    config_id = _config_id(config_data)
     os.makedirs(f"runs/{config_dir}/configs", exist_ok=True)
-    with open(f"runs/{config_dir}/configs/{config_filename}.yaml", "w") as outfile:
+    with open(f"runs/{config_dir}/configs/{config_id}.yaml", "w") as outfile:
         yaml.dump(config_data, outfile, default_flow_style=False)
 
-    return
+    return config_id
 
 
-def generate_config_two_matrix(
-    config_filename, config_dir, g2, g4, optimization_method, **kwargs
-):
+def generate_config_two_matrix(config_dir, g2, g4, optimization_method, **kwargs):
 
     if optimization_method not in ["newton", "pytorch"]:
         raise ValueError(f"optimization method {optimization_method} not recognized.")
@@ -255,17 +255,15 @@ def generate_config_two_matrix(
         "optimizer": optimization_config_dict,
     }
 
-    # write to yaml
+    config_id = _config_id(config_data)
     os.makedirs(f"runs/{config_dir}/configs", exist_ok=True)
-    with open(f"runs/{config_dir}/configs/{config_filename}.yaml", "w") as outfile:
+    with open(f"runs/{config_dir}/configs/{config_id}.yaml", "w") as outfile:
         yaml.dump(config_data, outfile, default_flow_style=False)
 
-    return
+    return config_id
 
 
-def generate_config_three_matrix(
-    config_filename, config_dir, g2, g3, g4, optimization_method, **kwargs
-):
+def generate_config_three_matrix(config_dir, g2, g3, g4, optimization_method, **kwargs):
 
     if optimization_method not in ["newton", "pytorch"]:
         raise ValueError(f"optimization method {optimization_method} not recognized.")
@@ -303,15 +301,15 @@ def generate_config_three_matrix(
         "optimizer": optimization_config_dict,
     }
 
-    # write to yaml
+    config_id = _config_id(config_data)
     os.makedirs(f"runs/{config_dir}/configs", exist_ok=True)
-    with open(f"runs/{config_dir}/configs/{config_filename}.yaml", "w") as outfile:
+    with open(f"runs/{config_dir}/configs/{config_id}.yaml", "w") as outfile:
         yaml.dump(config_data, outfile, default_flow_style=False)
 
-    return
+    return config_id
 
 
-def generate_config_bfss(config_filename, config_dir, optimization_method, **kwargs):
+def generate_config_bfss(config_dir, optimization_method, **kwargs):
 
     if optimization_method not in ["newton", "pytorch"]:
         raise ValueError(f"optimization method {optimization_method} not recognized.")
@@ -349,17 +347,15 @@ def generate_config_bfss(config_filename, config_dir, optimization_method, **kwa
         "optimizer": optimization_config_dict,
     }
 
-    # write to yaml
+    config_id = _config_id(config_data)
     os.makedirs(f"runs/{config_dir}/configs", exist_ok=True)
-    with open(f"runs/{config_dir}/configs/{config_filename}.yaml", "w") as outfile:
+    with open(f"runs/{config_dir}/configs/{config_id}.yaml", "w") as outfile:
         yaml.dump(config_data, outfile, default_flow_style=False)
 
-    return
+    return config_id
 
 
-def generate_config_bmn(
-    config_filename, config_dir, nu, lambd, optimization_method, **kwargs
-):
+def generate_config_bmn(config_dir, nu, lambd, optimization_method, **kwargs):
 
     if optimization_method not in ["newton", "pytorch"]:
         raise ValueError(f"optimization method {optimization_method} not recognized.")
@@ -398,12 +394,12 @@ def generate_config_bmn(
         "optimizer": optimization_config_dict,
     }
 
-    # write to yaml
+    config_id = _config_id(config_data)
     os.makedirs(f"runs/{config_dir}/configs", exist_ok=True)
-    with open(f"runs/{config_dir}/configs/{config_filename}.yaml", "w") as outfile:
+    with open(f"runs/{config_dir}/configs/{config_id}.yaml", "w") as outfile:
         yaml.dump(config_data, outfile, default_flow_style=False)
 
-    return
+    return config_id
 
 
 def run_bootstrap_from_config(

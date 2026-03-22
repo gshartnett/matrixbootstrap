@@ -14,7 +14,6 @@ g4 = 1
 g6 = 0
 
 generate_config_one_matrix(
-    config_filename="test",
     config_dir=f"OneMatrix_L_{L}_test",
     g2=g2,
     g4=g4,

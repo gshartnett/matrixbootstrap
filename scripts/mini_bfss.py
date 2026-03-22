@@ -11,7 +11,6 @@ logging.basicConfig(level=logging.INFO)
 
 ## energy held fixed
 L = 4
-checkpoint_path = f"MiniBFSS_L_{L}_symmetric"
 
 config_dir = f"MiniBFSS_L_{L}_symmetric"
 
@@ -23,13 +22,11 @@ st_operator_to_minimize = "x_2"
 
 energy = float(np.round(energy, decimals=6))
 generate_config_bfss(
-    config_filename=f"energy_{str(energy)}_op_to_min_{st_operator_to_minimize}",
     config_dir=config_dir,
     st_operator_to_minimize=st_operator_to_minimize,
     st_operators_evs_to_set={"energy": energy},
     max_degree_L=L,
     load_from_previously_computed=True,
-    checkpoint_path=checkpoint_path,
     impose_symmetries=True,
     optimization_method="newton",
     # optimization_method="pytorch",

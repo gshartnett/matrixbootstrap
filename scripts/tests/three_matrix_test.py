@@ -23,9 +23,7 @@ energy = 2.5
 st_operator_to_minimize = "x_2"
 
 generate_config_three_matrix(
-    config_filename="test",
     config_dir=f"ThreeMatrix_L_{L}_test",
-    checkpoint_path=f"ThreeMatrix_L_{L}_symmetric_g2_{g2}_g3_{g3}_g4_{g4}",
     g2=g2,
     g3=g3,
     g4=g4,

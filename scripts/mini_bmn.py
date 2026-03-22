@@ -19,19 +19,14 @@ for st_operator_to_minimize in ["x_2", "x_4", "neg_x_2", "neg_commutator_squared
 
             nu = float(np.round(nu, decimals=6))
             energy = float(np.round(energy, decimals=6))
-
-            checkpoint_path = f"MiniBMN_L_{L}_symmetric_nu_{nu}_lamb_{lambd}"
             config_dir = f"MiniBMN_L_{L}_symmetric"
-            config_filename = f"energy_{energy}_st_operator_to_minimize_{st_operator_to_minimize}_nu_{nu}_lambd_{lambd}"
 
             generate_config_bmn(
-                config_filename=config_filename,
                 config_dir=config_dir,
                 nu=nu,
                 lambd=lambd,
                 max_degree_L=L,
                 load_from_previously_computed=True,
-                checkpoint_path=checkpoint_path,
                 impose_symmetries=True,
                 odd_degree_vanish=False,
                 st_operator_to_minimize=st_operator_to_minimize,
