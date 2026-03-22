@@ -85,8 +85,10 @@ class BootstrapSystemComplex:
         """
         self.validate_operator(operator=self.gauge_generator)
         self.validate_operator(operator=self.hamiltonian)
-        print(f"Bootstrap system instantiated for {len(self.operator_dict)} operators")
-        print(f"Attribute: simplify_quadratic = {self.simplify_quadratic}")
+        logger.info(
+            f"Bootstrap system instantiated for {len(self.operator_dict)} operators"
+        )
+        logger.info(f"Attribute: simplify_quadratic = {self.simplify_quadratic}")
 
     def validate_operator(self, operator: MatrixOperator):
         """
@@ -103,7 +105,7 @@ class BootstrapSystemComplex:
         if not os.path.exists(path):
             raise ValueError(f"Error, save path {path} does not exist.")
 
-        print(f"Attempting to load from checkpoints, checkpoint_dir={path}")
+        logger.info(f"Attempting to load from checkpoints, checkpoint_dir={path}")
 
         # load the linear constraints
         if os.path.exists(path + "/linear_constraints_data.pkl"):
@@ -112,7 +114,7 @@ class BootstrapSystemComplex:
             self.linear_constraints = [
                 SingleTraceOperator(data=data) for data in loaded_data
             ]
-            print("  loaded previously computed linear constraints")
+            logger.info("  loaded previously computed linear constraints")
 
         # load the cyclic quadratic constraints
         if os.path.exists(path + "/cyclic_quadratic.pkl"):
@@ -125,13 +127,13 @@ class BootstrapSystemComplex:
                 }
                 for key, value in loaded_data.items()
             }
-            print("  loaded previously computed cyclic constraints")
+            logger.info("  loaded previously computed cyclic constraints")
 
         # load the null space matrix
         if os.path.exists(path + "/null_space_matrix.npz"):
             self.null_space_matrix = load_npz(path + "/null_space_matrix.npz")
             self.param_dim_null = self.null_space_matrix.shape[1]
-            print("  loaded previously computed null space matrix")
+            logger.info("  loaded previously computed null space matrix")
 
         # load the quadratic (numerical) constraints
         if os.path.exists(
@@ -147,12 +149,14 @@ class BootstrapSystemComplex:
                 path + "/quadratic_constraints_numerical_quadratic_term.npz"
             )
             self.quadratic_constraints_numerical = quadratic_constraints_numerical
-            print("  loaded previously computed quadratic constraints (numerical)")
+            logger.info(
+                "  loaded previously computed quadratic constraints (numerical)"
+            )
 
         # load the bootstrap table
         if os.path.exists(path + "/bootstrap_table_sparse.npz"):
             self.bootstrap_table_sparse = load_npz(path + "/bootstrap_table_sparse.npz")
-            print("  loaded previously computed bootstrap table")
+            logger.info("  loaded previously computed bootstrap table")
 
     def scale_param_to_enforce_normalization(self, param: np.ndarray) -> np.ndarray:
         """
@@ -187,7 +191,9 @@ class BootstrapSystemComplex:
 
         self.null_space_matrix = get_null_space_sparse(linear_constraint_matrix)
         self.param_dim_null = self.null_space_matrix.shape[1]
-        print(f"Null space dimension (number of parameters) = {self.param_dim_null}")
+        logger.info(
+            f"Null space dimension (number of parameters) = {self.param_dim_null}"
+        )
 
         if self.checkpoint_path is not None:
             save_npz(
@@ -204,7 +210,7 @@ class BootstrapSystemComplex:
         operators = [
             x for operators_by_degree in operators for x in operators_by_degree
         ]
-        print(f"Number of operators with length <= {L}: {len(operators)}")
+        logger.info(f"Number of operators with length <= {L}: {len(operators)}")
 
         # truncate the set of operators considered
         if fraction_operators_to_retain < 1.0:
@@ -232,7 +238,7 @@ class BootstrapSystemComplex:
             ]
 
             # add back any conjugates
-            print(
+            logger.info(
                 f"Number of operators with length <= {L} after truncation: {len(operators)}"
             )
 
@@ -248,14 +254,14 @@ class BootstrapSystemComplex:
         )
 
         if fraction_operators_to_retain < 1.0:
-            print(
+            logger.info(
                 f"Number of operators appearing in the L x L multiplication table (before truncation): {untruncated_number_of_operators}"
             )
-            print(
+            logger.info(
                 f"Number of operators appearing in the L x L multiplication table (after truncation): {len(operator_list)}"
             )
         else:
-            print(
+            logger.info(
                 f"Number of operators appearing in the L x L multiplication table: {len(operator_list)}"
             )
 
@@ -273,9 +279,6 @@ class BootstrapSystemComplex:
                 operators_by_degree[degree] = [op]
             else:
                 operators_by_degree[degree].append(op)
-
-        print(len(operators_by_degree[0]), len(operators_by_degree[1]))
-        print(operators_by_degree)
 
         # arrange the operators with degree <= L by degree mod 2
         # for building the bootstrap matrix
@@ -670,24 +673,24 @@ class BootstrapSystemComplex:
 
         # Hamiltonian constraints
         hamiltonian_constraints = self.generate_hamiltonian_constraints()
-        print(f"Generated {len(hamiltonian_constraints)} Hamiltonian constraints")
+        logger.info(f"Generated {len(hamiltonian_constraints)} Hamiltonian constraints")
         linear_constraints.extend(hamiltonian_constraints)
 
         # gauge constraints
         gauge_constraints = self.generate_gauge_constraints()
-        print(f"Generated {len(gauge_constraints)} gauge constraints")
+        logger.info(f"Generated {len(gauge_constraints)} gauge constraints")
         linear_constraints.extend(gauge_constraints)
 
         # symmetry constraints
         if self.symmetry_generators is not None:
             symmetry_constraints = self.generate_symmetry_constraints()
-            print(f"Generated {len(symmetry_constraints)} symmetry constraints")
+            logger.info(f"Generated {len(symmetry_constraints)} symmetry constraints")
             linear_constraints.extend(symmetry_constraints)
 
         # odd degree vanish
         if self.odd_degree_vanish:
             odd_degree_constraints = self.generate_odd_degree_vanish_constraints()
-            print(
+            logger.info(
                 f"Generated {len(odd_degree_constraints)} odd degree vanish constraints"
             )
             linear_constraints.extend(odd_degree_constraints)
@@ -695,8 +698,8 @@ class BootstrapSystemComplex:
         # cyclic constraints
         cyclic_linear, cyclic_quadratic = self.generate_cyclic_constraints()
         cyclic_linear = list(cyclic_linear.values())
-        print(f"Generated {len(cyclic_linear)} linear cyclic constraints")
-        print(f"Generated {len(cyclic_quadratic)} quadratic cyclic constraints")
+        logger.info(f"Generated {len(cyclic_linear)} linear cyclic constraints")
+        logger.info(f"Generated {len(cyclic_quadratic)} quadratic cyclic constraints")
         linear_constraints.extend(cyclic_linear)
 
         # NOTE pretty sure this is not necessary
@@ -952,9 +955,6 @@ class BootstrapSystemComplex:
             QI = QI.reshape((1, self.param_dim_null**2))
             # debug(f"  type(QR) = {type(QR)}")
 
-            print(f"lhs = {lhs}")
-            print(f"rhs = {rhs}")
-
             # process the real and imaginary constraints separately
             # real part
             linear_is_zero = np.max(np.abs(linear_constraint_vectorR)) < self.tol
@@ -997,12 +997,12 @@ class BootstrapSystemComplex:
             if constraint_idx > 100:
                 assert 1 == 0
 
-        print(f"len(quadratic_terms) = {len(quadratic_terms)}")
+        logger.info(f"len(quadratic_terms) = {len(quadratic_terms)}")
         if len(quadratic_terms) == 0:
             raise ValueError
 
         if self.simplify_quadratic and len(additional_constraints) > 0:
-            print(
+            logger.info(
                 f"Building quadratic constraints: adding {len(additional_constraints)} new linear constraints and rebuilding null matrix"
             )
             self.build_null_space_matrix(additional_constraints=additional_constraints)
@@ -1015,17 +1015,19 @@ class BootstrapSystemComplex:
         # apply reduction
         num_constraints = quadratic_terms.shape[0]
 
-        print(
+        logger.info(
             f"Number of quadratic constraints before row reduction: {num_constraints}"
         )
-        print("Skipping row reduction")
+        logger.info("Skipping row reduction")
         if False:
             stacked_matrix = hstack([quadratic_terms, linear_terms])
             stacked_matrix = get_row_space_sparse(stacked_matrix)
             num_constraints = stacked_matrix.shape[0]
             linear_terms = stacked_matrix[:, self.param_dim_null**2 :]
             quadratic_terms = stacked_matrix[:, : self.param_dim_null**2]
-        print(f"Number of quadratic constraints after row reduction: {num_constraints}")
+        logger.info(
+            f"Number of quadratic constraints after row reduction: {num_constraints}"
+        )
 
         if self.checkpoint_path is not None:
             save_npz(
@@ -1175,7 +1177,7 @@ class BootstrapSystemComplex:
             The bootstrap array, with shape (self.bootstrap_matrix_dim**2, self.param_dim_null).
             It has been reshaped to be a matrix.
         """
-        print("Building the bootstrap table...")
+        logger.info("Building the bootstrap table...")
         if self.null_space_matrix is None:
             raise ValueError("Error, null space matrix has not yet been built.")
         null_space_matrix = self.null_space_matrix

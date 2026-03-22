@@ -19,6 +19,8 @@ from matrixbootstrap.models import (
 from matrixbootstrap.solver_newton import solve_bootstrap as solve_bootstrap_newton
 from matrixbootstrap.solver_pytorch import solve_bootstrap as solve_bootstrap_pytorch
 
+logger = logging.getLogger(__name__)
+
 _MODEL_CLASSES = {
     "OneMatrix": OneMatrix,
     "TwoMatrix": TwoMatrix,
@@ -415,9 +417,9 @@ def run_bootstrap_from_config(
 
     # optionally skip if data file already exists
     if check_if_exists_already:
-        print(f"data/{config_dir}/{config_filename}.json")
+        logger.info(f"data/{config_dir}/{config_filename}.json")
         if os.path.exists(f"data/{config_dir}/{config_filename}.json"):
-            print("Run result already exists, skipping.")
+            logger.info("Run result already exists, skipping.")
             return
 
     # load the config file
@@ -526,7 +528,7 @@ def run_bootstrap_from_config(
         json.dump(result, f)
 
     for key, value in expectation_values.items():
-        print(f"EV {key}: {value:.4e}")
+        logger.info(f"EV {key}: {value:.4e}")
 
     return result
 
@@ -570,7 +572,7 @@ def run_all_configs(
             ]
         for future in futures:
             future.result()
-        print("finished!")
+        logger.info("finished!")
 
 
 if __name__ == "__main__":

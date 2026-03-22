@@ -1,3 +1,4 @@
+import logging
 import pickle
 from numbers import Number
 from typing import (
@@ -6,6 +7,8 @@ from typing import (
 )
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 TOL = 1e-12
 
@@ -271,7 +274,7 @@ class MatrixSystem:
     ):
         self.operator_basis = operator_basis
 
-        print("Assuming all operators are either Hermitian or anti-Hermitian.")
+        logger.warning("Assuming all operators are either Hermitian or anti-Hermitian.")
         # self.hermitian_dict = {op_str: ('X' in op_str) for op_str in self.operator_basis}
         # self.hermitian_dict = {op_str: True for op_str in self.operator_basis}
         self.hermitian_dict = hermitian_dict
@@ -367,7 +370,7 @@ class MatrixSystem:
                         )
 
                         if verbose:
-                            print(
+                            logger.debug(
                                 f"counter = {count}, swapping terms: {variable1}, {variable2}, new_term = {new_term}"
                             )
                             count += 1
