@@ -7,6 +7,5 @@ dist/
 .env
 *.ipynb_checkpoints/
 .DS_Store
-configs/
-data/
-checkpoints/
+runs/
+cache/

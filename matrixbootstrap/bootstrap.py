@@ -334,7 +334,9 @@ class BootstrapSystem:
             return []
 
         d = len(self.matrix_system.operator_basis) // 2
-        total_constraints_filepath = f"checkpoints/rotational_symmetry_constraints/dim_{d}_L_{self.max_degree_L}.pkl"
+        total_constraints_filepath = (
+            f"cache/rotational_symmetry_constraints/dim_{d}_L_{self.max_degree_L}.pkl"
+        )
 
         # if symmetry constraints exist, load them
         if os.path.exists(total_constraints_filepath):
@@ -347,6 +349,7 @@ class BootstrapSystem:
 
         # otherwise, generate them
         else:
+            os.makedirs("cache/rotational_symmetry_constraints", exist_ok=True)
             total_constraints = []  # all constraints
             n = len(self.matrix_system.operator_basis)
 
@@ -354,7 +357,7 @@ class BootstrapSystem:
             for symmetry_idx, symmetry_generator in enumerate(self.symmetry_generators):
 
                 constraints = []  # constraints for current generator
-                constraint_filepath = f"checkpoints/rotational_symmetry_constraints/dim_{d}_L_{self.max_degree_L}_sym_idx_{symmetry_idx}.pkl"
+                constraint_filepath = f"cache/rotational_symmetry_constraints/dim_{d}_L_{self.max_degree_L}_sym_idx_{symmetry_idx}.pkl"
 
                 # initialize a matrix M which will implement the linear action of the generator g
                 # M will obey [g, operators_vector] = M operators_vector

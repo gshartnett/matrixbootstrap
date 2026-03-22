@@ -208,9 +208,8 @@ def generate_config_one_matrix(
     }
 
     # write to yaml
-    # if not os.path.exists(f"configs/{config_dir}"):
-    os.makedirs(f"configs/{config_dir}", exist_ok=True)
-    with open(f"configs/{config_dir}/{config_filename}.yaml", "w") as outfile:
+    os.makedirs(f"runs/{config_dir}/configs", exist_ok=True)
+    with open(f"runs/{config_dir}/configs/{config_filename}.yaml", "w") as outfile:
         yaml.dump(config_data, outfile, default_flow_style=False)
 
     return
@@ -257,9 +256,8 @@ def generate_config_two_matrix(
     }
 
     # write to yaml
-    # if not os.path.exists(f"configs/{config_dir}"):
-    os.makedirs(f"configs/{config_dir}", exist_ok=True)
-    with open(f"configs/{config_dir}/{config_filename}.yaml", "w") as outfile:
+    os.makedirs(f"runs/{config_dir}/configs", exist_ok=True)
+    with open(f"runs/{config_dir}/configs/{config_filename}.yaml", "w") as outfile:
         yaml.dump(config_data, outfile, default_flow_style=False)
 
     return
@@ -306,9 +304,8 @@ def generate_config_three_matrix(
     }
 
     # write to yaml
-    # if not os.path.exists(f"configs/{config_dir}"):
-    os.makedirs(f"configs/{config_dir}", exist_ok=True)
-    with open(f"configs/{config_dir}/{config_filename}.yaml", "w") as outfile:
+    os.makedirs(f"runs/{config_dir}/configs", exist_ok=True)
+    with open(f"runs/{config_dir}/configs/{config_filename}.yaml", "w") as outfile:
         yaml.dump(config_data, outfile, default_flow_style=False)
 
     return
@@ -353,9 +350,8 @@ def generate_config_bfss(config_filename, config_dir, optimization_method, **kwa
     }
 
     # write to yaml
-    # if not os.path.exists(f"configs/{config_dir}"):
-    os.makedirs(f"configs/{config_dir}", exist_ok=True)
-    with open(f"configs/{config_dir}/{config_filename}.yaml", "w") as outfile:
+    os.makedirs(f"runs/{config_dir}/configs", exist_ok=True)
+    with open(f"runs/{config_dir}/configs/{config_filename}.yaml", "w") as outfile:
         yaml.dump(config_data, outfile, default_flow_style=False)
 
     return
@@ -403,9 +399,8 @@ def generate_config_bmn(
     }
 
     # write to yaml
-    # if not os.path.exists(f"configs/{config_dir}"):
-    os.makedirs(f"configs/{config_dir}", exist_ok=True)
-    with open(f"configs/{config_dir}/{config_filename}.yaml", "w") as outfile:
+    os.makedirs(f"runs/{config_dir}/configs", exist_ok=True)
+    with open(f"runs/{config_dir}/configs/{config_filename}.yaml", "w") as outfile:
         yaml.dump(config_data, outfile, default_flow_style=False)
 
     return
@@ -417,13 +412,13 @@ def run_bootstrap_from_config(
 
     # optionally skip if data file already exists
     if check_if_exists_already:
-        logger.info(f"data/{config_dir}/{config_filename}.json")
-        if os.path.exists(f"data/{config_dir}/{config_filename}.json"):
+        logger.info(f"runs/{config_dir}/results/{config_filename}.json")
+        if os.path.exists(f"runs/{config_dir}/results/{config_filename}.json"):
             logger.info("Run result already exists, skipping.")
             return
 
     # load the config file
-    with open(f"configs/{config_dir}/{config_filename}.yaml") as stream:
+    with open(f"runs/{config_dir}/configs/{config_filename}.yaml") as stream:
         config = yaml.safe_load(stream)
     config_model = config["model"]
     config_bootstrap = config["bootstrap"]
@@ -435,15 +430,7 @@ def run_bootstrap_from_config(
     )
 
     # checkpoint path
-    if config_bootstrap["checkpoint_path"] is None:
-        checkpoint_path = (
-            "checkpoints/"
-            + config_model["model name"]
-            + "_L_"
-            + str(config_bootstrap["max_degree_L"])
-        )
-    else:
-        checkpoint_path = "checkpoints/" + config_bootstrap["checkpoint_path"]
+    checkpoint_path = f"runs/{config_dir}/checkpoint"
 
     # handle the imposition of global symmetries
     if not config_bootstrap["impose_symmetries"]:
@@ -522,9 +509,8 @@ def run_bootstrap_from_config(
     result = optimization_result | expectation_values
     result["param"] = list(param)
 
-    # if not os.path.exists(f"data/{config_dir}"):
-    os.makedirs(f"data/{config_dir}", exist_ok=True)
-    with open(f"data/{config_dir}/{config_filename}.json", "w") as f:
+    os.makedirs(f"runs/{config_dir}/results", exist_ok=True)
+    with open(f"runs/{config_dir}/results/{config_filename}.json", "w") as f:
         json.dump(result, f)
 
     for key, value in expectation_values.items():
@@ -537,6 +523,61 @@ def _init_worker_logging():
     logging.basicConfig(level=logging.INFO)
 
 
+def _build_checkpoint_from_config(config_filename, config_dir):
+    """
+    Build and save the full bootstrap checkpoint for a config without running
+    the optimization. Subsequent runs with the same checkpoint path will load
+    pre-built constraints, null space, quadratic constraints, and bootstrap
+    table rather than regenerating them.
+    """
+    with open(f"runs/{config_dir}/configs/{config_filename}.yaml") as stream:
+        config = yaml.safe_load(stream)
+    config_model = config["model"]
+    config_bootstrap = config["bootstrap"]
+
+    checkpoint_path = f"runs/{config_dir}/checkpoint"
+
+    # skip if already fully built
+    if os.path.exists(checkpoint_path + "/bootstrap_table_sparse.npz"):
+        logger.info("Checkpoint already complete: %s", checkpoint_path)
+        return
+
+    logger.info("Building checkpoint: %s", checkpoint_path)
+    os.makedirs(checkpoint_path, exist_ok=True)
+
+    model = _MODEL_CLASSES[config_model["model name"]](
+        couplings=config_model["couplings"]
+    )
+    if not config_bootstrap["impose_symmetries"]:
+        model.symmetry_generators = None
+    if not config_bootstrap["impose_gauge_symmetry"]:
+        model.gauge_generator = None
+
+    bootstrap = _BOOTSTRAP_CLASSES[config_model["bootstrap class"]](
+        matrix_system=model.matrix_system,
+        hamiltonian=model.hamiltonian,
+        gauge_generator=model.gauge_generator,
+        max_degree_L=config_bootstrap["max_degree_L"],
+        odd_degree_vanish=config_bootstrap["odd_degree_vanish"],
+        simplify_quadratic=config_bootstrap["simplify_quadratic"],
+        symmetry_generators=model.symmetry_generators,
+        checkpoint_path=checkpoint_path,
+    )
+
+    # build and save all components in dependency order
+    bootstrap.build_null_space_matrix()  # → build_linear_constraints → generate_constraints
+    bootstrap.build_quadratic_constraints()  # needs null_space_matrix
+    bootstrap.build_bootstrap_table()  # needs null_space_matrix
+
+
+def _build_all_checkpoints(config_filenames, config_dir):
+    """
+    Build the shared checkpoint for this run if not already complete.
+    All configs in a run share the same checkpoint directory.
+    """
+    _build_checkpoint_from_config(config_filenames[0], config_dir)
+
+
 def run_all_configs(
     config_dir,
     parallel=False,
@@ -545,7 +586,7 @@ def run_all_configs(
     check_if_exists_already=True,
 ):
 
-    config_filenames = os.listdir(f"configs/{config_dir}")
+    config_filenames = os.listdir(f"runs/{config_dir}/configs")
     config_filenames = [f[:-5] for f in config_filenames if ".yaml" in f]
     # np.random.shuffle(config_filenames) # shuffle
 
