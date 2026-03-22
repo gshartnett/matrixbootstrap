@@ -24,7 +24,8 @@ def one_matrix_bootstrap_L1():
         max_degree_L=1,
         odd_degree_vanish=True,
         simplify_quadratic=False,
-        checkpoint_path=None,
+        structural_cache_path=None,
+        config_cache_path=None,
     )
 
 

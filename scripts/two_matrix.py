@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 
 from matrixbootstrap.config_utils import (
@@ -5,10 +7,11 @@ from matrixbootstrap.config_utils import (
     run_all_configs,
 )
 
+logging.basicConfig(level=logging.INFO)
+
 ## energy held fixed
 L = 3
 g2 = 1
-checkpoint_path = f"TwoMatrix_L_{L}_symmetric_{g2}"
 
 config_dir = f"TwoMatrix_L_{L}_symmetric_energy_fixed_g2_{g2}"
 # config_dir = f"TwoMatrix_L_{L}_symmetric_energy_fixed_g2_{g2}_pytorch"
@@ -18,7 +21,6 @@ for st_operator_to_minimize in ["x_2", "neg_x_2"]:
     for energy in np.linspace(0.9, 1.4, 81):
         energy = float(np.round(energy, decimals=6))
         generate_config_two_matrix(
-            config_filename=f"energy_{str(energy)}_op_to_min_{st_operator_to_minimize}",
             config_dir=config_dir,
             g2=g2,
             g4=1,
@@ -26,10 +28,9 @@ for st_operator_to_minimize in ["x_2", "neg_x_2"]:
             st_operators_evs_to_set={"energy": energy},
             max_degree_L=L,
             load_from_previously_computed=True,
-            checkpoint_path=checkpoint_path,
             impose_symmetries=True,
             optimization_method="newton",
-            cvxpy_solver="MOSEK",
+            cvxpy_solver="SCS",
             maxiters=30,
             init_scale=1e-2,
             reg=1e-4,

@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 import os
@@ -44,7 +45,6 @@ bootstrap_keys = [
     "symmetry_method",
     "impose_gauge_symmetry",
     "load_from_previously_computed",
-    "checkpoint_path",
 ]
 
 optimization_keys_newton = [
@@ -147,7 +147,6 @@ def generate_bootstrap_config(
     impose_symmetries=True,
     load_from_previously_computed=False,
     impose_gauge_symmetry=True,
-    checkpoint_path=None,
     symmetry_method="complete",
 ):
 
@@ -161,15 +160,34 @@ def generate_bootstrap_config(
         "symmetry_method": symmetry_method,
         "impose_gauge_symmetry": impose_gauge_symmetry,
         "load_from_previously_computed": load_from_previously_computed,
-        "checkpoint_path": checkpoint_path,
     }
 
     return bootstrap_config_dict
 
 
-def generate_config_one_matrix(
-    config_filename, config_dir, g2, g4, g6, optimization_method, **kwargs
-):
+def _config_id(config_data: dict) -> str:
+    """Generate a short deterministic hex ID from config content."""
+    content = json.dumps(config_data, sort_keys=True)
+    return hashlib.sha256(content.encode()).hexdigest()[:12]
+
+
+def _struct_hash(config_data: dict) -> str:
+    """
+    Generate a hex ID from the coupling-independent structural parameters.
+
+    The structural cache (cyclic quadratic constraints) depends only on the
+    model type and max_degree_L, not on coupling values or optimizer settings.
+    """
+    structural = {
+        "model_name": config_data["model"]["model name"],
+        "bootstrap_class": config_data["model"]["bootstrap class"],
+        "max_degree_L": config_data["bootstrap"]["max_degree_L"],
+    }
+    content = json.dumps(structural, sort_keys=True)
+    return hashlib.sha256(content.encode()).hexdigest()[:12]
+
+
+def generate_config_one_matrix(config_dir, g2, g4, g6, optimization_method, **kwargs):
 
     if optimization_method not in ["newton", "pytorch"]:
         raise ValueError(f"optimization method {optimization_method} not recognized.")
@@ -207,18 +225,15 @@ def generate_config_one_matrix(
         "optimizer": optimization_config_dict,
     }
 
-    # write to yaml
-    # if not os.path.exists(f"configs/{config_dir}"):
-    os.makedirs(f"configs/{config_dir}", exist_ok=True)
-    with open(f"configs/{config_dir}/{config_filename}.yaml", "w") as outfile:
+    config_id = _config_id(config_data)
+    os.makedirs(f"runs/{config_dir}/configs", exist_ok=True)
+    with open(f"runs/{config_dir}/configs/{config_id}.yaml", "w") as outfile:
         yaml.dump(config_data, outfile, default_flow_style=False)
 
-    return
+    return config_id
 
 
-def generate_config_two_matrix(
-    config_filename, config_dir, g2, g4, optimization_method, **kwargs
-):
+def generate_config_two_matrix(config_dir, g2, g4, optimization_method, **kwargs):
 
     if optimization_method not in ["newton", "pytorch"]:
         raise ValueError(f"optimization method {optimization_method} not recognized.")
@@ -256,18 +271,15 @@ def generate_config_two_matrix(
         "optimizer": optimization_config_dict,
     }
 
-    # write to yaml
-    # if not os.path.exists(f"configs/{config_dir}"):
-    os.makedirs(f"configs/{config_dir}", exist_ok=True)
-    with open(f"configs/{config_dir}/{config_filename}.yaml", "w") as outfile:
+    config_id = _config_id(config_data)
+    os.makedirs(f"runs/{config_dir}/configs", exist_ok=True)
+    with open(f"runs/{config_dir}/configs/{config_id}.yaml", "w") as outfile:
         yaml.dump(config_data, outfile, default_flow_style=False)
 
-    return
+    return config_id
 
 
-def generate_config_three_matrix(
-    config_filename, config_dir, g2, g3, g4, optimization_method, **kwargs
-):
+def generate_config_three_matrix(config_dir, g2, g3, g4, optimization_method, **kwargs):
 
     if optimization_method not in ["newton", "pytorch"]:
         raise ValueError(f"optimization method {optimization_method} not recognized.")
@@ -305,16 +317,15 @@ def generate_config_three_matrix(
         "optimizer": optimization_config_dict,
     }
 
-    # write to yaml
-    # if not os.path.exists(f"configs/{config_dir}"):
-    os.makedirs(f"configs/{config_dir}", exist_ok=True)
-    with open(f"configs/{config_dir}/{config_filename}.yaml", "w") as outfile:
+    config_id = _config_id(config_data)
+    os.makedirs(f"runs/{config_dir}/configs", exist_ok=True)
+    with open(f"runs/{config_dir}/configs/{config_id}.yaml", "w") as outfile:
         yaml.dump(config_data, outfile, default_flow_style=False)
 
-    return
+    return config_id
 
 
-def generate_config_bfss(config_filename, config_dir, optimization_method, **kwargs):
+def generate_config_bfss(config_dir, optimization_method, **kwargs):
 
     if optimization_method not in ["newton", "pytorch"]:
         raise ValueError(f"optimization method {optimization_method} not recognized.")
@@ -352,18 +363,15 @@ def generate_config_bfss(config_filename, config_dir, optimization_method, **kwa
         "optimizer": optimization_config_dict,
     }
 
-    # write to yaml
-    # if not os.path.exists(f"configs/{config_dir}"):
-    os.makedirs(f"configs/{config_dir}", exist_ok=True)
-    with open(f"configs/{config_dir}/{config_filename}.yaml", "w") as outfile:
+    config_id = _config_id(config_data)
+    os.makedirs(f"runs/{config_dir}/configs", exist_ok=True)
+    with open(f"runs/{config_dir}/configs/{config_id}.yaml", "w") as outfile:
         yaml.dump(config_data, outfile, default_flow_style=False)
 
-    return
+    return config_id
 
 
-def generate_config_bmn(
-    config_filename, config_dir, nu, lambd, optimization_method, **kwargs
-):
+def generate_config_bmn(config_dir, nu, lambd, optimization_method, **kwargs):
 
     if optimization_method not in ["newton", "pytorch"]:
         raise ValueError(f"optimization method {optimization_method} not recognized.")
@@ -402,13 +410,12 @@ def generate_config_bmn(
         "optimizer": optimization_config_dict,
     }
 
-    # write to yaml
-    # if not os.path.exists(f"configs/{config_dir}"):
-    os.makedirs(f"configs/{config_dir}", exist_ok=True)
-    with open(f"configs/{config_dir}/{config_filename}.yaml", "w") as outfile:
+    config_id = _config_id(config_data)
+    os.makedirs(f"runs/{config_dir}/configs", exist_ok=True)
+    with open(f"runs/{config_dir}/configs/{config_id}.yaml", "w") as outfile:
         yaml.dump(config_data, outfile, default_flow_style=False)
 
-    return
+    return config_id
 
 
 def run_bootstrap_from_config(
@@ -417,13 +424,13 @@ def run_bootstrap_from_config(
 
     # optionally skip if data file already exists
     if check_if_exists_already:
-        logger.info(f"data/{config_dir}/{config_filename}.json")
-        if os.path.exists(f"data/{config_dir}/{config_filename}.json"):
+        logger.info(f"runs/{config_dir}/results/{config_filename}.json")
+        if os.path.exists(f"runs/{config_dir}/results/{config_filename}.json"):
             logger.info("Run result already exists, skipping.")
             return
 
     # load the config file
-    with open(f"configs/{config_dir}/{config_filename}.yaml") as stream:
+    with open(f"runs/{config_dir}/configs/{config_filename}.yaml") as stream:
         config = yaml.safe_load(stream)
     config_model = config["model"]
     config_bootstrap = config["bootstrap"]
@@ -434,16 +441,9 @@ def run_bootstrap_from_config(
         couplings=config_model["couplings"]
     )
 
-    # checkpoint path
-    if config_bootstrap["checkpoint_path"] is None:
-        checkpoint_path = (
-            "checkpoints/"
-            + config_model["model name"]
-            + "_L_"
-            + str(config_bootstrap["max_degree_L"])
-        )
-    else:
-        checkpoint_path = "checkpoints/" + config_bootstrap["checkpoint_path"]
+    # cache paths
+    structural_cache_path = f"cache/structural/{_struct_hash(config)}"
+    config_cache_path = f"cache/per_config/{config_filename}"
 
     # handle the imposition of global symmetries
     if not config_bootstrap["impose_symmetries"]:
@@ -478,15 +478,15 @@ def run_bootstrap_from_config(
         odd_degree_vanish=config_bootstrap["odd_degree_vanish"],
         simplify_quadratic=config_bootstrap["simplify_quadratic"],
         symmetry_generators=model.symmetry_generators,
-        # impose_gauge_symmetry=config_bootstrap["impose_gauge_symmetry"],
-        checkpoint_path=checkpoint_path,
+        structural_cache_path=structural_cache_path,
+        config_cache_path=config_cache_path,
     )
 
-    # load previously-computed constraints
-    if config_bootstrap["load_from_previously_computed"] and os.path.exists(
-        checkpoint_path
-    ):
-        bootstrap.load_constraints(checkpoint_path)
+    # load from cache: structural cache is always used; per-config cache is
+    # used when load_from_previously_computed is set
+    bootstrap.load_structural_cache(structural_cache_path)
+    if config_bootstrap["load_from_previously_computed"]:
+        bootstrap.load_config_cache(config_cache_path)
 
     # solve the bootstrap
     optimization_method = config_optimizer.pop("optimization_method")
@@ -522,9 +522,8 @@ def run_bootstrap_from_config(
     result = optimization_result | expectation_values
     result["param"] = list(param)
 
-    # if not os.path.exists(f"data/{config_dir}"):
-    os.makedirs(f"data/{config_dir}", exist_ok=True)
-    with open(f"data/{config_dir}/{config_filename}.json", "w") as f:
+    os.makedirs(f"runs/{config_dir}/results", exist_ok=True)
+    with open(f"runs/{config_dir}/results/{config_filename}.json", "w") as f:
         json.dump(result, f)
 
     for key, value in expectation_values.items():
@@ -534,7 +533,74 @@ def run_bootstrap_from_config(
 
 
 def _init_worker_logging():
+    import warnings
+
     logging.basicConfig(level=logging.INFO)
+    # In parallel workers, suppress per-step detail logs — interleaved output
+    # from multiple workers is unreadable. Only results and errors surface.
+    logging.getLogger("matrixbootstrap.bootstrap").setLevel(logging.WARNING)
+    logging.getLogger("matrixbootstrap.algebra").setLevel(logging.ERROR)
+    logging.getLogger("matrixbootstrap.solver_newton").setLevel(logging.WARNING)
+    # Suppress cvxpy's "Solution may be inaccurate" UserWarning in workers.
+    warnings.filterwarnings("ignore", category=UserWarning, module="cvxpy")
+
+
+def _build_config_cache(config_filename, config_dir):
+    """
+    Pre-build and save all coupling-dependent cache artifacts for a single config.
+    Subsequent runs will load from cache instead of recomputing.
+    """
+    with open(f"runs/{config_dir}/configs/{config_filename}.yaml") as stream:
+        config = yaml.safe_load(stream)
+    config_model = config["model"]
+    config_bootstrap = config["bootstrap"]
+
+    structural_cache_path = f"cache/structural/{_struct_hash(config)}"
+    config_cache_path = f"cache/per_config/{config_filename}"
+
+    # skip if already fully built
+    if os.path.exists(config_cache_path + "/bootstrap_table_sparse.npz"):
+        logger.info("Config cache already complete: %s", config_cache_path)
+        return
+
+    logger.info("Building config cache: %s", config_cache_path)
+
+    model = _MODEL_CLASSES[config_model["model name"]](
+        couplings=config_model["couplings"]
+    )
+    if not config_bootstrap["impose_symmetries"]:
+        model.symmetry_generators = None
+    if not config_bootstrap["impose_gauge_symmetry"]:
+        model.gauge_generator = None
+
+    bootstrap = _BOOTSTRAP_CLASSES[config_model["bootstrap class"]](
+        matrix_system=model.matrix_system,
+        hamiltonian=model.hamiltonian,
+        gauge_generator=model.gauge_generator,
+        max_degree_L=config_bootstrap["max_degree_L"],
+        odd_degree_vanish=config_bootstrap["odd_degree_vanish"],
+        simplify_quadratic=config_bootstrap["simplify_quadratic"],
+        symmetry_generators=model.symmetry_generators,
+        structural_cache_path=structural_cache_path,
+        config_cache_path=config_cache_path,
+    )
+
+    # load structural cache (cyclic constraints) if available
+    bootstrap.load_structural_cache(structural_cache_path)
+
+    # build and save all components in dependency order
+    bootstrap.build_null_space_matrix()  # → build_linear_constraints → generate_constraints
+    bootstrap.build_quadratic_constraints()  # needs null_space_matrix
+    bootstrap.build_bootstrap_table()  # needs null_space_matrix
+
+
+def _build_all_caches(config_filenames, config_dir):
+    """
+    Pre-build per-config caches for all configs in a run.
+    Each config has its own cache keyed by config_id.
+    """
+    for config_filename in config_filenames:
+        _build_config_cache(config_filename, config_dir)
 
 
 def run_all_configs(
@@ -545,7 +611,7 @@ def run_all_configs(
     check_if_exists_already=True,
 ):
 
-    config_filenames = os.listdir(f"configs/{config_dir}")
+    config_filenames = os.listdir(f"runs/{config_dir}/configs")
     config_filenames = [f[:-5] for f in config_filenames if ".yaml" in f]
     # np.random.shuffle(config_filenames) # shuffle
 

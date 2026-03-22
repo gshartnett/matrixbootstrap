@@ -1,9 +1,13 @@
+import logging
+
 import numpy as np
 
 from matrixbootstrap.config_utils import (
     generate_config_three_matrix,
     run_all_configs,
 )
+
+logging.basicConfig(level=logging.INFO)
 
 L = 3
 
@@ -19,9 +23,7 @@ energy = 2.5
 st_operator_to_minimize = "x_2"
 
 generate_config_three_matrix(
-    config_filename="test",
     config_dir=f"ThreeMatrix_L_{L}_test",
-    checkpoint_path=f"ThreeMatrix_L_{L}_symmetric_g2_{g2}_g3_{g3}_g4_{g4}",
     g2=g2,
     g3=g3,
     g4=g4,
@@ -34,7 +36,7 @@ generate_config_three_matrix(
     st_operators_evs_to_set={"energy": energy},
     # optimization_method="pytorch",
     optimization_method="newton",
-    cvxpy_solver="MOSEK",
+    cvxpy_solver="SCS",
     reg=1e-5,
 )
 

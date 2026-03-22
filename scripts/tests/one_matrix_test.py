@@ -1,8 +1,12 @@
+import logging
+
 from matrixbootstrap.brezin import compute_Brezin_energy
 from matrixbootstrap.config_utils import (
     generate_config_one_matrix,
     run_all_configs,
 )
+
+logging.basicConfig(level=logging.INFO)
 
 L = 3
 g2 = 1
@@ -10,7 +14,6 @@ g4 = 1
 g6 = 0
 
 generate_config_one_matrix(
-    config_filename="test",
     config_dir=f"OneMatrix_L_{L}_test",
     g2=g2,
     g4=g4,
@@ -27,4 +30,4 @@ generate_config_one_matrix(
 run_all_configs(
     config_dir=f"OneMatrix_L_{L}_test", parallel=False, check_if_exists_already=False
 )
-print(f"Brezin energy = {compute_Brezin_energy(g=g4/4)}")
+print(f"Brezin energy = {compute_Brezin_energy(g_value=g4/4)}")

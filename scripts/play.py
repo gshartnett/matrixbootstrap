@@ -11,7 +11,6 @@ L = 3
 dir = f"OneMatrix_L_{L}_play"
 
 generate_config_one_matrix(
-    config_filename="test",
     config_dir=dir,
     checkpoint_dir=dir,
     g2=1,
