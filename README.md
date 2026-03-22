@@ -177,4 +177,4 @@ pytest tests/ -v
 
 ## References
 
-- Han, Hartnoll, Kruthoff, [*Bootstrapping Matrix Quantum Mechanics*](https://arxiv.org/abs/2004.01981), PRL 2020
+- Han, Hartnoll, Kruthoff, [*Bootstrapping Matrix Quantum Mechanics*](https://arxiv.org/abs/2004.10212), PRL 2020
