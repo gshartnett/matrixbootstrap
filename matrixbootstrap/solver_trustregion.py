@@ -1,3 +1,4 @@
+import logging
 from typing import Union
 
 import cvxpy as cp
@@ -7,8 +8,6 @@ from scipy.sparse import (
     csr_matrix,
     vstack,
 )
-
-import logging
 
 from matrixbootstrap.algebra import SingleTraceOperator
 from matrixbootstrap.bootstrap import BootstrapSystem
@@ -22,8 +21,8 @@ def get_null_space_quantities(
     st_operator_inhomo_constraints: list[tuple[SingleTraceOperator, float]],
     quadratic_constraints_numerical,
     param_array: np.ndarray,
-    include_quadratic:bool=True,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    include_quadratic: bool = True,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """_summary_
 
     Parameters
@@ -98,12 +97,12 @@ def sdp_init(
     null_space_projector: np.ndarray,
     param_particular: np.ndarray,
     init_array: np.ndarray,
-    maxiters:int=5_000,
-    verbose:bool=False,
-    cvxpy_solver:str="SCS",
-    eps_abs:float=1e-5,
-    eps_rel:float=1e-5,
-    eps_infeas:float=1e-7,
+    maxiters: int = 5_000,
+    verbose: bool = False,
+    cvxpy_solver: str = "SCS",
+    eps_abs: float = 1e-5,
+    eps_rel: float = 1e-5,
+    eps_infeas: float = 1e-7,
 ):
     """
     Finds the parameters such that
@@ -162,13 +161,13 @@ def sdp_relax(
     param_particular: np.ndarray,
     init_array: np.ndarray,
     radius: float,
-    maxiters:int=10_000,
-    relax_rate:float=0.8,
-    verbose:bool=False,
-    cvxpy_solver:str="SCS",
-    eps_abs:float=1e-5,
-    eps_rel:float=1e-5,
-    eps_infeas:float=1e-7,
+    maxiters: int = 10_000,
+    relax_rate: float = 0.8,
+    verbose: bool = False,
+    cvxpy_solver: str = "SCS",
+    eps_abs: float = 1e-5,
+    eps_rel: float = 1e-5,
+    eps_infeas: float = 1e-7,
 ):
     """
     Finds the parameters such that
@@ -236,11 +235,11 @@ def sdp_minimize(
     radius,
     reg=1e-4,
     maxiters=10_000,
-    verbose:bool=False,
-    cvxpy_solver:str="SCS",
-    eps_abs:float=1e-5,
-    eps_rel:float=1e-5,
-    eps_infeas:float=1e-7,
+    verbose: bool = False,
+    cvxpy_solver: str = "SCS",
+    eps_abs: float = 1e-5,
+    eps_rel: float = 1e-5,
+    eps_infeas: float = 1e-7,
 ):
     """
     Finds the parameters such that
@@ -311,7 +310,9 @@ def sdp_minimize(
     )[0]
     logger.debug("sdp_minimize status (maxiters=%d): %s", maxiters, prob.status)
     logger.debug("sdp_minimize ||A x - b||: %.4e", violation_of_linear_constraints)
-    logger.debug("sdp_minimize bootstrap matrix min eigenvalue: %.4e", min_bootstrap_eigenvalue)
+    logger.debug(
+        "sdp_minimize bootstrap matrix min eigenvalue: %.4e", min_bootstrap_eigenvalue
+    )
 
     optimization_result = {
         "solver": cvxpy_solver,
@@ -526,7 +527,8 @@ def solve_bootstrap(
 
     # the loss function to minimize, i.e., the value of op
     # vec = operator_to_vector(sol, op)
-    loss = lambda param: linear_objective_vector.dot(param)
+    def loss(param):
+        return linear_objective_vector.dot(param)
 
     null_space_projector, param_particular, A, b = get_null_space_quantities(
         bootstrap,
@@ -555,7 +557,9 @@ def solve_bootstrap(
 
     # optimization steps
     for step in range(maxiters):
-        logger.debug("step %d/%d (radius=%.4e, mu=%.4e)", step + 1, maxiters, radius, mu)
+        logger.debug(
+            "step %d/%d (radius=%.4e, mu=%.4e)", step + 1, maxiters, radius, mu
+        )
 
         # one step
         null_space_projector, param_particular, A, b = get_null_space_quantities(
@@ -566,7 +570,7 @@ def solve_bootstrap(
             include_quadratic=True,
         )
 
-        '''
+        """
         relaxed_param = sdp_relax(
             bootstrap_table_sparse=bootstrap_table_sparse,
             null_space_projector=null_space_projector,
@@ -581,7 +585,7 @@ def solve_bootstrap(
             eps_rel=eps_rel,
             eps_infeas=eps_infeas,
         )
-        '''
+        """
 
         null_space_projector, param_particular, A, b = get_null_space_quantities(
             bootstrap,
@@ -612,7 +616,11 @@ def solve_bootstrap(
         if param_new is None:
             # wrongly infeasible
             radius *= relax_rate  # GSH used to be 0.9
-            logger.warning("Wrongly infeasible at step %d, expanding radius to %.4e", step + 1, radius)
+            logger.warning(
+                "Wrongly infeasible at step %d, expanding radius to %.4e",
+                step + 1,
+                radius,
+            )
             continue
 
         # compute constraint violations for candidate new parameters
@@ -622,7 +630,9 @@ def solve_bootstrap(
         quadratic_constraint_violation = get_quadratic_constraint_vector_sparse(
             quadratic_constraints_numerical, param_new
         )
-        max_quadratic_constraint_violation = np.max(np.abs(quadratic_constraint_violation))
+        max_quadratic_constraint_violation = np.max(
+            np.abs(quadratic_constraint_violation)
+        )
 
         min_bootstrap_eigenvalue = np.linalg.eigvalsh(
             (bootstrap_table_sparse @ param_new).reshape(
@@ -632,9 +642,13 @@ def solve_bootstrap(
 
         logger.info(
             "step %d/%d: loss=%.4f, max_lin_viol=%.4e, max_quad_viol=%.4e, min_eig=%.4e, R=%.4e",
-            step + 1, maxiters, loss(param_new),
-            max_linear_constraint_violation, max_quadratic_constraint_violation,
-            min_bootstrap_eigenvalue, radius,
+            step + 1,
+            maxiters,
+            loss(param_new),
+            max_linear_constraint_violation,
+            max_quadratic_constraint_violation,
+            min_bootstrap_eigenvalue,
+            radius,
         )
 
         if (
@@ -679,7 +693,10 @@ def solve_bootstrap(
 
         if rho > 0.5:
             # accept
-            if max_linear_constraint_violation < eps and min_bootstrap_eigenvalue > -eps:
+            if (
+                max_linear_constraint_violation < eps
+                and min_bootstrap_eigenvalue > -eps
+            ):
                 radius *= 2 - relax_rate  # GSH used to be 1.2
                 logger.debug("  step accepted, expanding R to %.4e", radius)
             param = param_new
@@ -688,7 +705,11 @@ def solve_bootstrap(
             # reject
             old_radius = radius
             radius = relax_rate * np.linalg.norm(param_new - param)
-            logger.debug("  step rejected, shrinking R from %.4e to %.4e", old_radius, radius)
+            logger.debug(
+                "  step rejected, shrinking R from %.4e to %.4e", old_radius, radius
+            )
 
-    logger.warning("minimize did not converge to precision %.5f within %d steps.", eps, maxiters)
+    logger.warning(
+        "minimize did not converge to precision %.5f within %d steps.", eps, maxiters
+    )
     return param, optimization_result

@@ -26,6 +26,12 @@ cycler = ">=0.11"
 pytest = ">=7.0"
 
 
+[tool.ruff]
+exclude = ["*.ipynb"]
+
+[tool.ruff.lint]
+ignore = ["F841"]  # local variable assigned but never used — often intentional stubs
+
 [tool.black]
 exclude = '''
 (

@@ -92,8 +92,8 @@ class SpecialUnitaryGroup:
             if n > 1:
                 matrix = np.zeros((self.N, self.N))
                 matrix[n - 1, n - 1] = 1 - n
-                for l in range(1, n):
-                    matrix[l - 1, l - 1] = 1
+                for idx in range(1, n):
+                    matrix[idx - 1, idx - 1] = 1
                 generators[self.gamma(n)] = matrix / np.sqrt(2 * n * (n - 1))
 
         return generators
@@ -113,28 +113,28 @@ class SpecialUnitaryGroup:
                         structure_constants[
                             (self.alpha(n, m), self.alpha(k, n), self.beta(k, m))
                         ] = (1 / 2)
-                    except:
+                    except Exception:
                         pass
 
                     try:
                         structure_constants[
                             (self.alpha(n, m), self.alpha(n, k), self.beta(k, m))
                         ] = (1 / 2)
-                    except:
+                    except Exception:
                         pass
 
                     try:
                         structure_constants[
                             (self.alpha(n, m), self.alpha(k, m), self.beta(k, n))
                         ] = (1 / 2)
-                    except:
+                    except Exception:
                         pass
 
                     try:
                         structure_constants[
                             (self.beta(n, m), self.beta(k, m), self.beta(k, n))
                         ] = (1 / 2)
-                    except:
+                    except Exception:
                         pass
 
                     try:
@@ -142,14 +142,14 @@ class SpecialUnitaryGroup:
                             structure_constants[
                                 (self.alpha(n, m), self.beta(n, m), self.gamma(m))
                             ] = -np.sqrt((m - 1) / (2 * m))
-                    except:
+                    except Exception:
                         pass
 
                     try:
                         structure_constants[
                             (self.alpha(n, m), self.beta(n, m), self.gamma(n))
                         ] = np.sqrt(n / (2 * (n - 1)))
-                    except:
+                    except Exception:
                         pass
 
                     if m < k and k < n:
@@ -157,7 +157,7 @@ class SpecialUnitaryGroup:
                             structure_constants[
                                 (self.alpha(n, m), self.beta(n, m), self.gamma(k))
                             ] = np.sqrt(1 / (2 * k * (k - 1)))
-                        except:
+                        except Exception:
                             pass
 
         # symmetrize

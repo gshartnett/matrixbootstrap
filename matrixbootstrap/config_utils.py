@@ -1,16 +1,13 @@
-import os
 import json
-import yaml
-import fire
-import numpy as np
+import os
 from concurrent.futures import ProcessPoolExecutor
+
+import fire
+import yaml
+
 from matrixbootstrap.algebra import SingleTraceOperator
-from matrixbootstrap.bootstrap import BootstrapSystem
-from matrixbootstrap.bootstrap_complex import BootstrapSystemComplex
-from matrixbootstrap.models import OneMatrix, TwoMatrix, MiniBFSS, ThreeMatrix, MiniBMN
 from matrixbootstrap.solver_newton import solve_bootstrap as solve_bootstrap_newton
 from matrixbootstrap.solver_pytorch import solve_bootstrap as solve_bootstrap_pytorch
-
 
 bootstrap_keys = [
     "max_degree_L",
@@ -23,24 +20,24 @@ bootstrap_keys = [
     "impose_gauge_symmetry",
     "load_from_previously_computed",
     "checkpoint_path",
-    ]
+]
 
-optimization_keys_newton=[
+optimization_keys_newton = [
     "init_scale",
     "init",
     "maxiters",
     "maxiters_cvxpy",
     "cvxpy_solver",
     "tol",
-    'reg',
+    "reg",
     "eps_abs",
     "eps_rel",
     "eps_infeas",
     "radius",
     "PRNG_seed",
-    ]
+]
 
-optimization_keys_pytorch=[
+optimization_keys_pytorch = [
     "init_scale",
     "init",
     "PRNG_seed",
@@ -49,7 +46,8 @@ optimization_keys_pytorch=[
     "num_epochs",
     "penalty_reg",
     "patience",
-    ]
+]
+
 
 def generate_optimization_config_newton(
     PRNG_seed=None,
@@ -63,10 +61,10 @@ def generate_optimization_config_newton(
     eps_rel=1e-5,
     eps_infeas=1e-7,
     radius=1e5,
-    cvxpy_solver='SCS',
-    ):
+    cvxpy_solver="SCS",
+):
 
-    optimization_config_dict={
+    optimization_config_dict = {
         "init": init,
         "PRNG_seed": PRNG_seed,
         "init_scale": init_scale,
@@ -80,7 +78,7 @@ def generate_optimization_config_newton(
         "radius": radius,
         "cvxpy_solver": cvxpy_solver,
         "optimization_method": "newton",
-        }
+    }
 
     return optimization_config_dict
 
@@ -96,9 +94,9 @@ def generate_optimization_config_pytorch(
     tol=1e-8,
     patience=100,
     early_stopping_tol=1e-3,
-    ):
+):
 
-    optimization_config_dict={
+    optimization_config_dict = {
         "init": init,
         "PRNG_seed": PRNG_seed,
         "init_scale": init_scale,
@@ -109,8 +107,8 @@ def generate_optimization_config_pytorch(
         "optimization_method": "pytorch",
         "tol": tol,
         "patience": patience,
-        "early_stopping_tol": early_stopping_tol
-        }
+        "early_stopping_tol": early_stopping_tol,
+    }
 
     return optimization_config_dict
 
@@ -126,7 +124,7 @@ def generate_bootstrap_config(
     impose_gauge_symmetry=True,
     checkpoint_path=None,
     symmetry_method="complete",
-    ):
+):
 
     bootstrap_config_dict = {
         "max_degree_L": max_degree_L,
@@ -139,36 +137,39 @@ def generate_bootstrap_config(
         "impose_gauge_symmetry": impose_gauge_symmetry,
         "load_from_previously_computed": load_from_previously_computed,
         "checkpoint_path": checkpoint_path,
-        }
+    }
 
     return bootstrap_config_dict
 
 
 def generate_config_one_matrix(
-    config_filename,
-    config_dir,
-    g2,
-    g4,
-    g6,
-    optimization_method,
-    **kwargs):
+    config_filename, config_dir, g2, g4, g6, optimization_method, **kwargs
+):
 
-    if not optimization_method in ["newton", "pytorch"]:
+    if optimization_method not in ["newton", "pytorch"]:
         raise ValueError(f"optimization method {optimization_method} not recognized.")
 
     # split the kwargs into separate bootstrap and optimization kwargs
     kwargs_bootstrap = {key: kwargs[key] for key in bootstrap_keys if key in kwargs}
     if optimization_method == "newton":
-        kwargs_optimization = {key: kwargs[key] for key in optimization_keys_newton if key in kwargs}
+        kwargs_optimization = {
+            key: kwargs[key] for key in optimization_keys_newton if key in kwargs
+        }
     elif optimization_method == "pytorch":
-        kwargs_optimization = {key: kwargs[key] for key in optimization_keys_pytorch if key in kwargs}
+        kwargs_optimization = {
+            key: kwargs[key] for key in optimization_keys_pytorch if key in kwargs
+        }
 
     # build the bootstrap and optimization configs
     bootstrap_config_dict = generate_bootstrap_config(**kwargs_bootstrap)
     if optimization_method == "newton":
-        optimization_config_dict = generate_optimization_config_newton(**kwargs_optimization)
+        optimization_config_dict = generate_optimization_config_newton(
+            **kwargs_optimization
+        )
     elif optimization_method == "pytorch":
-        optimization_config_dict = generate_optimization_config_pytorch(**kwargs_optimization)
+        optimization_config_dict = generate_optimization_config_pytorch(
+            **kwargs_optimization
+        )
 
     # build the config dictionary
     config_data = {
@@ -182,7 +183,7 @@ def generate_config_one_matrix(
     }
 
     # write to yaml
-    #if not os.path.exists(f"configs/{config_dir}"):
+    # if not os.path.exists(f"configs/{config_dir}"):
     os.makedirs(f"configs/{config_dir}", exist_ok=True)
     with open(f"configs/{config_dir}/{config_filename}.yaml", "w") as outfile:
         yaml.dump(config_data, outfile, default_flow_style=False)
@@ -191,29 +192,33 @@ def generate_config_one_matrix(
 
 
 def generate_config_two_matrix(
-    config_filename,
-    config_dir,
-    g2,
-    g4,
-    optimization_method,
-    **kwargs):
+    config_filename, config_dir, g2, g4, optimization_method, **kwargs
+):
 
-    if not optimization_method in ["newton", "pytorch"]:
+    if optimization_method not in ["newton", "pytorch"]:
         raise ValueError(f"optimization method {optimization_method} not recognized.")
 
     # split the kwargs into separate bootstrap and optimization kwargs
     kwargs_bootstrap = {key: kwargs[key] for key in bootstrap_keys if key in kwargs}
     if optimization_method == "newton":
-        kwargs_optimization = {key: kwargs[key] for key in optimization_keys_newton if key in kwargs}
+        kwargs_optimization = {
+            key: kwargs[key] for key in optimization_keys_newton if key in kwargs
+        }
     elif optimization_method == "pytorch":
-        kwargs_optimization = {key: kwargs[key] for key in optimization_keys_pytorch if key in kwargs}
+        kwargs_optimization = {
+            key: kwargs[key] for key in optimization_keys_pytorch if key in kwargs
+        }
 
     # build the bootstrap and optimization configs
     bootstrap_config_dict = generate_bootstrap_config(**kwargs_bootstrap)
     if optimization_method == "newton":
-        optimization_config_dict = generate_optimization_config_newton(**kwargs_optimization)
+        optimization_config_dict = generate_optimization_config_newton(
+            **kwargs_optimization
+        )
     elif optimization_method == "pytorch":
-        optimization_config_dict = generate_optimization_config_pytorch(**kwargs_optimization)
+        optimization_config_dict = generate_optimization_config_pytorch(
+            **kwargs_optimization
+        )
 
     # build the config dictionary
     config_data = {
@@ -227,7 +232,7 @@ def generate_config_two_matrix(
     }
 
     # write to yaml
-    #if not os.path.exists(f"configs/{config_dir}"):
+    # if not os.path.exists(f"configs/{config_dir}"):
     os.makedirs(f"configs/{config_dir}", exist_ok=True)
     with open(f"configs/{config_dir}/{config_filename}.yaml", "w") as outfile:
         yaml.dump(config_data, outfile, default_flow_style=False)
@@ -236,30 +241,33 @@ def generate_config_two_matrix(
 
 
 def generate_config_three_matrix(
-    config_filename,
-    config_dir,
-    g2,
-    g3,
-    g4,
-    optimization_method,
-    **kwargs):
+    config_filename, config_dir, g2, g3, g4, optimization_method, **kwargs
+):
 
-    if not optimization_method in ["newton", "pytorch"]:
+    if optimization_method not in ["newton", "pytorch"]:
         raise ValueError(f"optimization method {optimization_method} not recognized.")
 
     # split the kwargs into separate bootstrap and optimization kwargs
     kwargs_bootstrap = {key: kwargs[key] for key in bootstrap_keys if key in kwargs}
     if optimization_method == "newton":
-        kwargs_optimization = {key: kwargs[key] for key in optimization_keys_newton if key in kwargs}
+        kwargs_optimization = {
+            key: kwargs[key] for key in optimization_keys_newton if key in kwargs
+        }
     elif optimization_method == "pytorch":
-        kwargs_optimization = {key: kwargs[key] for key in optimization_keys_pytorch if key in kwargs}
+        kwargs_optimization = {
+            key: kwargs[key] for key in optimization_keys_pytorch if key in kwargs
+        }
 
     # build the bootstrap and optimization configs
     bootstrap_config_dict = generate_bootstrap_config(**kwargs_bootstrap)
     if optimization_method == "newton":
-        optimization_config_dict = generate_optimization_config_newton(**kwargs_optimization)
+        optimization_config_dict = generate_optimization_config_newton(
+            **kwargs_optimization
+        )
     elif optimization_method == "pytorch":
-        optimization_config_dict = generate_optimization_config_pytorch(**kwargs_optimization)
+        optimization_config_dict = generate_optimization_config_pytorch(
+            **kwargs_optimization
+        )
 
     # build the config dictionary
     config_data = {
@@ -273,7 +281,7 @@ def generate_config_three_matrix(
     }
 
     # write to yaml
-    #if not os.path.exists(f"configs/{config_dir}"):
+    # if not os.path.exists(f"configs/{config_dir}"):
     os.makedirs(f"configs/{config_dir}", exist_ok=True)
     with open(f"configs/{config_dir}/{config_filename}.yaml", "w") as outfile:
         yaml.dump(config_data, outfile, default_flow_style=False)
@@ -281,28 +289,32 @@ def generate_config_three_matrix(
     return
 
 
-def generate_config_bfss(
-    config_filename,
-    config_dir,
-    optimization_method,
-    **kwargs):
+def generate_config_bfss(config_filename, config_dir, optimization_method, **kwargs):
 
-    if not optimization_method in ["newton", "pytorch"]:
+    if optimization_method not in ["newton", "pytorch"]:
         raise ValueError(f"optimization method {optimization_method} not recognized.")
 
     # split the kwargs into separate bootstrap and optimization kwargs
     kwargs_bootstrap = {key: kwargs[key] for key in bootstrap_keys if key in kwargs}
     if optimization_method == "newton":
-        kwargs_optimization = {key: kwargs[key] for key in optimization_keys_newton if key in kwargs}
+        kwargs_optimization = {
+            key: kwargs[key] for key in optimization_keys_newton if key in kwargs
+        }
     elif optimization_method == "pytorch":
-        kwargs_optimization = {key: kwargs[key] for key in optimization_keys_pytorch if key in kwargs}
+        kwargs_optimization = {
+            key: kwargs[key] for key in optimization_keys_pytorch if key in kwargs
+        }
 
     # build the bootstrap and optimization configs
     bootstrap_config_dict = generate_bootstrap_config(**kwargs_bootstrap)
     if optimization_method == "newton":
-        optimization_config_dict = generate_optimization_config_newton(**kwargs_optimization)
+        optimization_config_dict = generate_optimization_config_newton(
+            **kwargs_optimization
+        )
     elif optimization_method == "pytorch":
-        optimization_config_dict = generate_optimization_config_pytorch(**kwargs_optimization)
+        optimization_config_dict = generate_optimization_config_pytorch(
+            **kwargs_optimization
+        )
 
     # build the config dictionary
     config_data = {
@@ -316,43 +328,48 @@ def generate_config_bfss(
     }
 
     # write to yaml
-    #if not os.path.exists(f"configs/{config_dir}"):
+    # if not os.path.exists(f"configs/{config_dir}"):
     os.makedirs(f"configs/{config_dir}", exist_ok=True)
     with open(f"configs/{config_dir}/{config_filename}.yaml", "w") as outfile:
         yaml.dump(config_data, outfile, default_flow_style=False)
 
     return
 
-def generate_config_bmn(
-    config_filename,
-    config_dir,
-    nu,
-    lambd,
-    optimization_method,
-    **kwargs):
 
-    if not optimization_method in ["newton", "pytorch"]:
+def generate_config_bmn(
+    config_filename, config_dir, nu, lambd, optimization_method, **kwargs
+):
+
+    if optimization_method not in ["newton", "pytorch"]:
         raise ValueError(f"optimization method {optimization_method} not recognized.")
 
     # split the kwargs into separate bootstrap and optimization kwargs
     kwargs_bootstrap = {key: kwargs[key] for key in bootstrap_keys if key in kwargs}
     if optimization_method == "newton":
-        kwargs_optimization = {key: kwargs[key] for key in optimization_keys_newton if key in kwargs}
+        kwargs_optimization = {
+            key: kwargs[key] for key in optimization_keys_newton if key in kwargs
+        }
     elif optimization_method == "pytorch":
-        kwargs_optimization = {key: kwargs[key] for key in optimization_keys_pytorch if key in kwargs}
+        kwargs_optimization = {
+            key: kwargs[key] for key in optimization_keys_pytorch if key in kwargs
+        }
 
     # build the bootstrap and optimization configs
     bootstrap_config_dict = generate_bootstrap_config(**kwargs_bootstrap)
     if optimization_method == "newton":
-        optimization_config_dict = generate_optimization_config_newton(**kwargs_optimization)
+        optimization_config_dict = generate_optimization_config_newton(
+            **kwargs_optimization
+        )
     elif optimization_method == "pytorch":
-        optimization_config_dict = generate_optimization_config_pytorch(**kwargs_optimization)
+        optimization_config_dict = generate_optimization_config_pytorch(
+            **kwargs_optimization
+        )
 
     # build the config dictionary
     config_data = {
         "model": {
             "model name": "MiniBMN",
-            #"bootstrap class": "BootstrapSystemComplex",
+            # "bootstrap class": "BootstrapSystemComplex",
             "bootstrap class": "BootstrapSystem",
             "couplings": {"nu": float(nu), "lambda": float(lambd)},
         },
@@ -361,7 +378,7 @@ def generate_config_bmn(
     }
 
     # write to yaml
-    #if not os.path.exists(f"configs/{config_dir}"):
+    # if not os.path.exists(f"configs/{config_dir}"):
     os.makedirs(f"configs/{config_dir}", exist_ok=True)
     with open(f"configs/{config_dir}/{config_filename}.yaml", "w") as outfile:
         yaml.dump(config_data, outfile, default_flow_style=False)
@@ -369,13 +386,15 @@ def generate_config_bmn(
     return
 
 
-def run_bootstrap_from_config(config_filename, config_dir, verbose=True, check_if_exists_already=True):
+def run_bootstrap_from_config(
+    config_filename, config_dir, verbose=True, check_if_exists_already=True
+):
 
     # optionally skip if data file already exists
     if check_if_exists_already:
         print(f"data/{config_dir}/{config_filename}.json")
         if os.path.exists(f"data/{config_dir}/{config_filename}.json"):
-            print(f"Run result already exists, skipping.")
+            print("Run result already exists, skipping.")
             return
 
     # load the config file
@@ -390,7 +409,12 @@ def run_bootstrap_from_config(config_filename, config_dir, verbose=True, check_i
 
     # checkpoint path
     if config_bootstrap["checkpoint_path"] is None:
-        checkpoint_path = f"checkpoints/" + config_model["model name"] + "_L_" + str(config_bootstrap["max_degree_L"])
+        checkpoint_path = (
+            "checkpoints/"
+            + config_model["model name"]
+            + "_L_"
+            + str(config_bootstrap["max_degree_L"])
+        )
     else:
         checkpoint_path = "checkpoints/" + config_bootstrap["checkpoint_path"]
 
@@ -406,10 +430,12 @@ def run_bootstrap_from_config(config_filename, config_dir, verbose=True, check_i
     if config_bootstrap["st_operator_to_minimize"] is None:
         st_operator_to_minimize = None
     else:
-        st_operator_to_minimize = model.operators_to_track[config_bootstrap["st_operator_to_minimize"]]
+        st_operator_to_minimize = model.operators_to_track[
+            config_bootstrap["st_operator_to_minimize"]
+        ]
 
     # operators whose expectation values are to be fixed
-    st_operator_inhomo_constraints=[(SingleTraceOperator(data={(): 1}), 1)]
+    st_operator_inhomo_constraints = [(SingleTraceOperator(data={(): 1}), 1)]
     if config_bootstrap["st_operators_evs_to_set"] is not None:
         for key, value in config_bootstrap["st_operators_evs_to_set"].items():
             st_operator_inhomo_constraints.append(
@@ -425,12 +451,14 @@ def run_bootstrap_from_config(config_filename, config_dir, verbose=True, check_i
         odd_degree_vanish=config_bootstrap["odd_degree_vanish"],
         simplify_quadratic=config_bootstrap["simplify_quadratic"],
         symmetry_generators=model.symmetry_generators,
-        #impose_gauge_symmetry=config_bootstrap["impose_gauge_symmetry"],
+        # impose_gauge_symmetry=config_bootstrap["impose_gauge_symmetry"],
         checkpoint_path=checkpoint_path,
     )
 
     # load previously-computed constraints
-    if config_bootstrap["load_from_previously_computed"] and os.path.exists(checkpoint_path):
+    if config_bootstrap["load_from_previously_computed"] and os.path.exists(
+        checkpoint_path
+    ):
         bootstrap.load_constraints(checkpoint_path)
 
     # solve the bootstrap
@@ -440,30 +468,34 @@ def run_bootstrap_from_config(config_filename, config_dir, verbose=True, check_i
             bootstrap=bootstrap,
             st_operator_to_minimize=st_operator_to_minimize,
             st_operator_inhomo_constraints=st_operator_inhomo_constraints,
-            **config_optimizer
-            )
+            **config_optimizer,
+        )
     elif optimization_method == "pytorch":
         param, optimization_result = solve_bootstrap_pytorch(
             bootstrap=bootstrap,
             st_operator_to_minimize=st_operator_to_minimize,
             st_operator_inhomo_constraints=st_operator_inhomo_constraints,
-            **config_optimizer
-            )
+            **config_optimizer,
+        )
 
     if param is None:
         return
 
     # record select expectation values
     expectation_values = {
-        name: float(bootstrap.get_operator_expectation_value(st_operator=st_operator, param=param).real)
+        name: float(
+            bootstrap.get_operator_expectation_value(
+                st_operator=st_operator, param=param
+            ).real
+        )
         for name, st_operator in model.operators_to_track.items()
-        }
+    }
 
     # save the results
     result = optimization_result | expectation_values
     result["param"] = list(param)
 
-    #if not os.path.exists(f"data/{config_dir}"):
+    # if not os.path.exists(f"data/{config_dir}"):
     os.makedirs(f"data/{config_dir}", exist_ok=True)
     with open(f"data/{config_dir}/{config_filename}.json", "w") as f:
         json.dump(result, f)
@@ -474,21 +506,40 @@ def run_bootstrap_from_config(config_filename, config_dir, verbose=True, check_i
     return result
 
 
-def run_all_configs(config_dir, parallel=False, max_workers=6, verbose=True, check_if_exists_already=True):
+def run_all_configs(
+    config_dir,
+    parallel=False,
+    max_workers=6,
+    verbose=True,
+    check_if_exists_already=True,
+):
 
     config_filenames = os.listdir(f"configs/{config_dir}")
-    config_filenames = [f[:-5] for f in config_filenames if '.yaml' in f]
-    #np.random.shuffle(config_filenames) # shuffle
+    config_filenames = [f[:-5] for f in config_filenames if ".yaml" in f]
+    # np.random.shuffle(config_filenames) # shuffle
 
     if not parallel:
         for config_filename in config_filenames:
-            run_bootstrap_from_config(config_filename, config_dir, check_if_exists_already=check_if_exists_already)
+            run_bootstrap_from_config(
+                config_filename,
+                config_dir,
+                check_if_exists_already=check_if_exists_already,
+            )
     else:
         with ProcessPoolExecutor(max_workers) as executor:
-            futures = [executor.submit(run_bootstrap_from_config, config_filename, config_dir, verbose, check_if_exists_already) for config_filename in config_filenames]
+            futures = [
+                executor.submit(
+                    run_bootstrap_from_config,
+                    config_filename,
+                    config_dir,
+                    verbose,
+                    check_if_exists_already,
+                )
+                for config_filename in config_filenames
+            ]
         for future in futures:
             future.result()
-        print('finished!')
+        print("finished!")
 
 
 if __name__ == "__main__":

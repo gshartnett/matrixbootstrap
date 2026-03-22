@@ -5,8 +5,6 @@ from itertools import product
 from typing import Optional
 
 import numpy as np
-
-logger = logging.getLogger(__name__)
 from scipy.linalg import ishermitian
 from scipy.sparse import (
     coo_matrix,
@@ -28,6 +26,8 @@ from matrixbootstrap.linear_algebra import (
     get_null_space_sparse,
     get_row_space_sparse,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class BootstrapSystem:
@@ -80,8 +80,11 @@ class BootstrapSystem:
         if self.gauge_generator is not None:
             self.validate_operator(operator=self.gauge_generator)
         self.validate_operator(operator=self.hamiltonian)
-        logger.info("Bootstrap system: %d operators, simplify_quadratic=%s",
-                    len(self.operator_dict), self.simplify_quadratic)
+        logger.info(
+            "Bootstrap system: %d operators, simplify_quadratic=%s",
+            len(self.operator_dict),
+            self.simplify_quadratic,
+        )
 
     def validate_operator(self, operator: MatrixOperator):
         """
@@ -89,7 +92,7 @@ class BootstrapSystem:
         """
         for op, coeff in operator:
             for op_str in op:
-                if not (op_str in self.matrix_system.operator_basis):
+                if op_str not in self.matrix_system.operator_basis:
                     raise ValueError(
                         f"Invalid operator: constrains term {op_str} which is not in operator_basis."
                     )
@@ -104,11 +107,15 @@ class BootstrapSystem:
         """
         linear_constraint_matrix = self.build_linear_constraints(additional_constraints)
 
-        logger.info("Building null space matrix: constraint matrix shape %s",
-                    linear_constraint_matrix.shape)
+        logger.info(
+            "Building null space matrix: constraint matrix shape %s",
+            linear_constraint_matrix.shape,
+        )
         self.null_space_matrix = get_null_space_sparse(linear_constraint_matrix)
         self.param_dim_null = self.null_space_matrix.shape[1]
-        logger.info("Null space dimension (number of free parameters) = %d", self.param_dim_null)
+        logger.info(
+            "Null space dimension (number of free parameters) = %d", self.param_dim_null
+        )
 
         if self.checkpoint_path is not None:
             save_npz(
@@ -143,7 +150,10 @@ class BootstrapSystem:
         #   1: [('X'), ('P'), ..., ]
         # }
         operators_by_degree = {}
-        degree_func = lambda x: len(x)
+
+        def degree_func(x):
+            return len(x)
+
         for op in operator_list:
             degree = degree_func(op)
             if degree not in operators_by_degree:
@@ -213,7 +223,9 @@ class BootstrapSystem:
                 path + "/quadratic_constraints_numerical_quadratic_term.npz"
             )
             self.quadratic_constraints_numerical = quadratic_constraints_numerical
-            logger.info("  loaded previously computed quadratic constraints (numerical)")
+            logger.info(
+                "  loaded previously computed quadratic constraints (numerical)"
+            )
 
         # load the bootstrap table
         if os.path.exists(path + "/bootstrap_table_sparse.npz"):
@@ -328,18 +340,20 @@ class BootstrapSystem:
         if os.path.exists(total_constraints_filepath):
             with open(total_constraints_filepath, "rb") as f:
                 total_constraints = pickle.load(f)
-            logger.info("Loaded symmetry constraints from %s", total_constraints_filepath)
+            logger.info(
+                "Loaded symmetry constraints from %s", total_constraints_filepath
+            )
             return total_constraints
 
         # otherwise, generate them
         else:
-            total_constraints = [] # all constraints
+            total_constraints = []  # all constraints
             n = len(self.matrix_system.operator_basis)
 
             # loop over symmetry generators M
             for symmetry_idx, symmetry_generator in enumerate(self.symmetry_generators):
 
-                constraints = [] # constraints for current generator
+                constraints = []  # constraints for current generator
                 constraint_filepath = f"checkpoints/rotational_symmetry_constraints/dim_{d}_L_{self.max_degree_L}_sym_idx_{symmetry_idx}.pkl"
 
                 # initialize a matrix M which will implement the linear action of the generator g
@@ -384,14 +398,22 @@ class BootstrapSystem:
                 for idx, operator in enumerate(all_new_operators):
 
                     # compute the charge under the symmetry
-                    charge = sum([eig_values[new_ops_dict[basis_op]] for basis_op in operator])
+                    charge = sum(
+                        [eig_values[new_ops_dict[basis_op]] for basis_op in operator]
+                    )
 
                     # if the charge is not zero, the resulting operator expectation value must vanish in a symmetric state
                     if np.abs(charge) > tol:
 
                         operator2 = {}
                         for i in range(len(operator)):
-                            operator2[i] = [(self.matrix_system.operator_basis[j], old_to_new_variables[new_ops_dict[operator[i]], j],) for j in range(n)]
+                            operator2[i] = [
+                                (
+                                    self.matrix_system.operator_basis[j],
+                                    old_to_new_variables[new_ops_dict[operator[i]], j],
+                                )
+                                for j in range(n)
+                            ]
 
                         # build the constraint single-trace operator
                         data = {}
@@ -421,7 +443,8 @@ class BootstrapSystem:
 
                     logger.debug(
                         "Generating symmetry constraints: operator %d/%d",
-                        idx + 1, len(all_new_operators) * len(self.symmetry_generators)
+                        idx + 1,
+                        len(all_new_operators) * len(self.symmetry_generators),
                     )
 
                 # clean them
@@ -467,7 +490,8 @@ class BootstrapSystem:
 
             logger.debug(
                 "Generating Hamiltonian constraints: operator %d/%d",
-                op_idx + 1, len(self.operator_list)
+                op_idx + 1,
+                len(self.operator_list),
             )
 
         return self.clean_constraints(constraints)
@@ -494,7 +518,8 @@ class BootstrapSystem:
 
             logger.debug(
                 "Generating gauge constraints: operator %d/%d",
-                op_idx + 1, len(self.operator_list)
+                op_idx + 1,
+                len(self.operator_list),
             )
 
         return self.clean_constraints(constraints)
@@ -629,7 +654,8 @@ class BootstrapSystem:
 
             logger.debug(
                 "Generating cyclic constraints: operator %d/%d",
-                op_idx + 1, len(self.operator_list)
+                op_idx + 1,
+                len(self.operator_list),
             )
 
         return linear_constraints, quadratic_constraints
@@ -648,7 +674,9 @@ class BootstrapSystem:
 
         # Hamiltonian constraints
         hamiltonian_constraints = self.generate_hamiltonian_constraints()
-        logger.info("Generated %d Hamiltonian constraints", len(hamiltonian_constraints))
+        logger.info(
+            "Generated %d Hamiltonian constraints", len(hamiltonian_constraints)
+        )
         linear_constraints.extend(hamiltonian_constraints)
 
         # gauge constraints
@@ -670,7 +698,10 @@ class BootstrapSystem:
         # odd degree vanish
         if self.odd_degree_vanish:
             odd_degree_constraints = self.generate_odd_degree_vanish_constraints()
-            logger.info("Generated %d odd-degree vanish constraints", len(odd_degree_constraints))
+            logger.info(
+                "Generated %d odd-degree vanish constraints",
+                len(odd_degree_constraints),
+            )
             linear_constraints.extend(odd_degree_constraints)
 
         # cyclic constraints
@@ -806,13 +837,16 @@ class BootstrapSystem:
         quadratic_constraints[None] = normalization_constraint
 
         # loop over constraints
-        logger.info("Building quadratic constraints (%d total)...", len(quadratic_constraints))
+        logger.info(
+            "Building quadratic constraints (%d total)...", len(quadratic_constraints)
+        )
         for constraint_idx, (operator_idx, constraint) in enumerate(
             quadratic_constraints.items()
         ):
             logger.debug(
                 "Processing quadratic constraint %d/%d",
-                constraint_idx + 1, len(quadratic_constraints)
+                constraint_idx + 1,
+                len(quadratic_constraints),
             )
             # debug(f"Memory usage: {psutil.Process().memory_info().rss / 1024 ** 2}")
 
@@ -853,7 +887,7 @@ class BootstrapSystem:
         if self.simplify_quadratic and len(additional_constraints) > 0:
             logger.info(
                 "Adding %d new linear constraints from quadratic simplification; rebuilding null space",
-                len(additional_constraints)
+                len(additional_constraints),
             )
             self.build_null_space_matrix(additional_constraints=additional_constraints)
             return self.build_quadratic_constraints()
@@ -980,7 +1014,9 @@ class BootstrapSystem:
             The bootstrap array, with shape (self.bootstrap_matrix_dim**2, self.param_dim_null).
             It has been reshaped to be a matrix.
         """
-        logger.info("Building bootstrap table (basis size %d)...", self.bootstrap_matrix_dim)
+        logger.info(
+            "Building bootstrap table (basis size %d)...", self.bootstrap_matrix_dim
+        )
         if self.null_space_matrix is None:
             raise ValueError("Error, null space matrix has not yet been built.")
 
@@ -1011,8 +1047,8 @@ class BootstrapSystem:
         # keep the table complex for now
         bootstrap_table = np.zeros(
             (self.bootstrap_matrix_dim, self.bootstrap_matrix_dim, self.param_dim_null),
-            dtype=np.complex128
-            )
+            dtype=np.complex128,
+        )
         for (i, j, k), value in bootstrap_dict.items():
             bootstrap_table[i, j, k] = value
 
@@ -1022,7 +1058,9 @@ class BootstrapSystem:
                 bootstrap_table.shape[2],
             )
         )
-        logger.info("Bootstrap table built: shape %s", self.bootstrap_table_sparse.shape)
+        logger.info(
+            "Bootstrap table built: shape %s", self.bootstrap_table_sparse.shape
+        )
 
         # save
         if self.checkpoint_path is not None:
@@ -1031,7 +1069,7 @@ class BootstrapSystem:
                 self.bootstrap_table_sparse,
             )
 
-    def get_bootstrap_matrix(self, param: np.ndarray, atol:float=1e-8) -> np.ndarray:
+    def get_bootstrap_matrix(self, param: np.ndarray, atol: float = 1e-8) -> np.ndarray:
         """
         Build the bootstrap matrix for a given null parameter vector.
 

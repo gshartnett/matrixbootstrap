@@ -1,20 +1,20 @@
+import logging
 from typing import Optional
 
 import cvxpy as cp
 import numpy as np
 import scipy.sparse as sparse
-from scipy.sparse import csr_matrix
 from scipy.linalg import ishermitian
-import logging
+from scipy.sparse import csr_matrix
 
 from matrixbootstrap.algebra import SingleTraceOperator
 from matrixbootstrap.bootstrap import BootstrapSystem
-
-logger = logging.getLogger(__name__)
+from matrixbootstrap.linear_algebra import get_null_space_dense
 from matrixbootstrap.solver_trustregion import (
     get_quadratic_constraint_vector_sparse as get_quadratic_constraint_vector,
 )
-from matrixbootstrap.linear_algebra import get_null_space_dense
+
+logger = logging.getLogger(__name__)
 
 
 def sdp_minimize(
@@ -94,7 +94,7 @@ def sdp_minimize(
     # set-up
     matrix_dim = int(np.sqrt(bootstrap_table_sparse.shape[0]))
     num_variables = bootstrap_table_sparse.shape[1]
-    param = cp.Variable(num_variables) # declare the cvxpy param
+    param = cp.Variable(num_variables)  # declare the cvxpy param
 
     # build the constraints
     # 1. the PSD bootstrap constraint(s)
@@ -110,18 +110,22 @@ def sdp_minimize(
         logger.debug("Mapping complex bootstrap matrix to real")
         bootstrap_table_sparse_real = bootstrap_table_sparse.real
         bootstrap_table_sparse_imag = bootstrap_table_sparse.imag
-        matrix_real = cp.reshape(bootstrap_table_sparse_real @ param, (matrix_dim, matrix_dim))
-        matrix_imag = cp.reshape(bootstrap_table_sparse_imag @ param, (matrix_dim, matrix_dim))
+        matrix_real = cp.reshape(
+            bootstrap_table_sparse_real @ param, (matrix_dim, matrix_dim)
+        )
+        matrix_imag = cp.reshape(
+            bootstrap_table_sparse_imag @ param, (matrix_dim, matrix_dim)
+        )
         matrix_block = cp.bmat(
             [[matrix_real, -matrix_imag], [matrix_imag, matrix_real]]
         )
         constraints = [matrix_block >> 0]
     else:
-        constraints = [cp.reshape(bootstrap_table_sparse @ param, (matrix_dim, matrix_dim)) >> 0]
+        constraints = [
+            cp.reshape(bootstrap_table_sparse @ param, (matrix_dim, matrix_dim)) >> 0
+        ]
 
-    constraints += [
-        linear_inhomogeneous_eq[0] @ param == linear_inhomogeneous_eq[1]
-    ]
+    constraints += [linear_inhomogeneous_eq[0] @ param == linear_inhomogeneous_eq[1]]
     constraints += [cp.norm(param) <= radius]
 
     # the loss to minimize
@@ -131,8 +135,9 @@ def sdp_minimize(
         # add possible penalty / regularization terms
         # Ax=b penalty
         if linear_inhomogeneous_penalty is not None:
-            penalty = cp.norm(
-                linear_inhomogeneous_penalty[0] @ param - linear_inhomogeneous_penalty[1]
+            _ = cp.norm(
+                linear_inhomogeneous_penalty[0] @ param
+                - linear_inhomogeneous_penalty[1]
             )
 
         # l2 norm on param vector
@@ -143,7 +148,7 @@ def sdp_minimize(
 
     # solve the optimization problem
     prob = cp.Problem(cp.Minimize(loss), constraints)
-    if cvxpy_solver == 'SCS':
+    if cvxpy_solver == "SCS":
         prob.solve(
             verbose=verbose,
             max_iters=maxiters,
@@ -155,21 +160,21 @@ def sdp_minimize(
     elif cvxpy_solver == "MOSEK":
         prob.solve(
             verbose=verbose,
-            #max_iters=maxiters,
-            #eps_abs=eps_abs,
-            #eps_rel=eps_rel,
-            #eps_infeas=eps_infeas,
+            # max_iters=maxiters,
+            # eps_abs=eps_abs,
+            # eps_rel=eps_rel,
+            # eps_infeas=eps_infeas,
             solver=solver,
-            accept_unknown=True, # https://www.cvxpy.org/tutorial/solvers/index.html
+            accept_unknown=True,  # https://www.cvxpy.org/tutorial/solvers/index.html
             mosek_params={
-                #"MSK_DPAR_OPTIMIZER_MAX_TIME": 100,
-                #"MSK_DPAR_BASIS_TOL_S": 1e-8,
-                #"MSK_DPAR_BASIS_TOL_X": 1e-8,
-                #"MSK_IPAR_INTPNT_MAX_ITERATIONS": 1000,
-                #"MSK_IPAR_SIM_MAX_ITERATIONS": 30_000_000,
+                # "MSK_DPAR_OPTIMIZER_MAX_TIME": 100,
+                # "MSK_DPAR_BASIS_TOL_S": 1e-8,
+                # "MSK_DPAR_BASIS_TOL_X": 1e-8,
+                # "MSK_IPAR_INTPNT_MAX_ITERATIONS": 1000,
+                # "MSK_IPAR_SIM_MAX_ITERATIONS": 30_000_000,
                 #'MSK_IPAR_INTPNT_SOLVE_FORM': 'MSK_SOLVE_DUAL',
-                },
-            )
+            },
+        )
 
     if param.value is None:
         raise ValueError("sdp_minimize failed, None value returned.")
@@ -184,7 +189,9 @@ def sdp_minimize(
     )[0]
     logger.debug("sdp_minimize status (maxiters=%d): %s", maxiters, prob.status)
     logger.debug("sdp_minimize ||A x - b||: %.4e", violation_of_linear_constraints)
-    logger.debug("sdp_minimize bootstrap matrix min eigenvalue: %.4e", min_bootstrap_eigenvalue)
+    logger.debug(
+        "sdp_minimize bootstrap matrix min eigenvalue: %.4e", min_bootstrap_eigenvalue
+    )
 
     optimization_result = {
         "solver": cvxpy_solver,
@@ -277,7 +284,7 @@ def sdp_minimize_null(
     # set-up
     matrix_dim = int(np.sqrt(bootstrap_table_sparse.shape[0]))
     num_variables = bootstrap_table_sparse.shape[1]
-    param_null = cp.Variable(num_variables) # declare the cvxpy param
+    param_null = cp.Variable(num_variables)  # declare the cvxpy param
 
     # write param vector as particular solution plus a null term
     param = null_space_projector @ param_null + param_particular
@@ -296,14 +303,20 @@ def sdp_minimize_null(
         logger.debug("Mapping complex bootstrap matrix to real")
         bootstrap_table_sparse_real = bootstrap_table_sparse.real
         bootstrap_table_sparse_imag = bootstrap_table_sparse.imag
-        matrix_real = cp.reshape(bootstrap_table_sparse_real @ param, (matrix_dim, matrix_dim))
-        matrix_imag = cp.reshape(bootstrap_table_sparse_imag @ param, (matrix_dim, matrix_dim))
+        matrix_real = cp.reshape(
+            bootstrap_table_sparse_real @ param, (matrix_dim, matrix_dim)
+        )
+        matrix_imag = cp.reshape(
+            bootstrap_table_sparse_imag @ param, (matrix_dim, matrix_dim)
+        )
         matrix_block = cp.bmat(
             [[matrix_real, -matrix_imag], [matrix_imag, matrix_real]]
         )
         constraints = [matrix_block >> 0]
     else:
-        constraints = [cp.reshape(bootstrap_table_sparse @ param, (matrix_dim, matrix_dim)) >> 0]
+        constraints = [
+            cp.reshape(bootstrap_table_sparse @ param, (matrix_dim, matrix_dim)) >> 0
+        ]
 
     # constrain param vector to lie within a ball of a given radius
     constraints += [cp.norm(param) <= radius]
@@ -321,7 +334,7 @@ def sdp_minimize_null(
 
     # solve the optimization problem
     prob = cp.Problem(cp.Minimize(loss), constraints)
-    if cvxpy_solver == 'SCS':
+    if cvxpy_solver == "SCS":
         prob.solve(
             verbose=verbose,
             max_iters=maxiters,
@@ -333,24 +346,24 @@ def sdp_minimize_null(
     elif cvxpy_solver == "MOSEK":
         prob.solve(
             verbose=verbose,
-            #max_iters=maxiters,
-            #eps_abs=eps_abs,
-            #eps_rel=eps_rel,
-            #eps_infeas=eps_infeas,
+            # max_iters=maxiters,
+            # eps_abs=eps_abs,
+            # eps_rel=eps_rel,
+            # eps_infeas=eps_infeas,
             solver=solver,
-            accept_unknown=True, # https://www.cvxpy.org/tutorial/solvers/index.html
+            accept_unknown=True,  # https://www.cvxpy.org/tutorial/solvers/index.html
             mosek_params={
-                #"MSK_DPAR_OPTIMIZER_MAX_TIME": 100,
-                #"MSK_IPAR_BI_MAX_ITERATIONS": 10_000_000,
-                #"MSK_IPAR_INTPNT_MAX_ITERATIONS": 1000_00,
-                #"MSK_IPAR_SIM_MAX_ITERATIONS": 30_000_000,
+                # "MSK_DPAR_OPTIMIZER_MAX_TIME": 100,
+                # "MSK_IPAR_BI_MAX_ITERATIONS": 10_000_000,
+                # "MSK_IPAR_INTPNT_MAX_ITERATIONS": 1000_00,
+                # "MSK_IPAR_SIM_MAX_ITERATIONS": 30_000_000,
                 #'MSK_DPAR_INTPNT_TOL_REL_GAP': 1e-9,
                 #'MSK_DPAR_INTPNT_TOL_PFEAS': 1e-9,
                 #'MSK_DPAR_INTPNT_TOL_DFEAS': 1e-9,
                 #'MSK_IPAR_PRESOLVE_USE': 2,  # Full presolve
                 #'MSK_IPAR_INTPNT_MAX_ITERATIONS': 1000,
-                },
-            )
+            },
+        )
 
     if param.value is None:
         raise ValueError("sdp_minimize failed, None value returned.")
@@ -365,7 +378,9 @@ def sdp_minimize_null(
     )[0]
     logger.debug("sdp_minimize status: %s", prob.status)
     logger.debug("sdp_minimize ||A x - b||: %.4e", violation_of_linear_constraints)
-    logger.debug("sdp_minimize bootstrap matrix min eigenvalue: %.4e", min_bootstrap_eigenvalue)
+    logger.debug(
+        "sdp_minimize bootstrap matrix min eigenvalue: %.4e", min_bootstrap_eigenvalue
+    )
 
     optimization_result = {
         "solver": cvxpy_solver,
@@ -456,8 +471,12 @@ def solve_bootstrap(
 
     # confirm bootstrap table is consistent with hermitian bootstrap matrix
     logger.debug("Bootstrap table dtype: %s", bootstrap_table_sparse.dtype)
-    bootstrap_matrix_tmp = bootstrap_table_sparse @ np.random.normal(size=bootstrap.param_dim_null)
-    bootstrap_matrix_tmp = bootstrap_matrix_tmp.reshape((bootstrap.bootstrap_matrix_dim, bootstrap.bootstrap_matrix_dim))
+    bootstrap_matrix_tmp = bootstrap_table_sparse @ np.random.normal(
+        size=bootstrap.param_dim_null
+    )
+    bootstrap_matrix_tmp = bootstrap_matrix_tmp.reshape(
+        (bootstrap.bootstrap_matrix_dim, bootstrap.bootstrap_matrix_dim)
+    )
     if not ishermitian(bootstrap_matrix_tmp, atol=1e-12):
         raise ValueError("Error, bootstrap matrix is not Hermitian.")
     logger.debug("Bootstrap parameter dimension: %d", bootstrap.param_dim_null)
@@ -470,7 +489,7 @@ def solve_bootstrap(
         init = np.asarray(init)
         logger.debug("Initializing from provided param vector")
     param_array = init
-    param_array_old = None
+    _param_array_old = None  # reserved for future convergence check
 
     # map the single trace operator whose expectation value we wish to minimize to a coefficient vector
     if st_operator_to_minimize is not None:
@@ -480,7 +499,9 @@ def solve_bootstrap(
         if not np.allclose(
             linear_objective_vector.imag, np.zeros_like(linear_objective_vector)
         ):
-            raise ValueError("Error, the coefficient vector is complex but should be real.")
+            raise ValueError(
+                "Error, the coefficient vector is complex but should be real."
+            )
         linear_objective_vector = linear_objective_vector.real
     else:
         linear_objective_vector = None
@@ -516,11 +537,17 @@ def solve_bootstrap(
         )
         logger.debug(
             "step %d/%d: objective=%.4f, max_quad_violation=%.4e, ||param||=%.4e, radius=%.4e, reg=%.4e",
-            step + 1, maxiters,
-            linear_objective_vector @ param_array if linear_objective_vector is not None else float("nan"),
+            step + 1,
+            maxiters,
+            (
+                linear_objective_vector @ param_array
+                if linear_objective_vector is not None
+                else float("nan")
+            ),
             np.max(np.abs(quad_cons_val)),
             np.linalg.norm(param_array),
-            radius, reg,
+            radius,
+            reg,
         )
 
         # build the Ax=b constraints
@@ -541,10 +568,10 @@ def solve_bootstrap(
 
         # build a penalty term to enforce Ax=b for the linearized quadratic constraints
         # NOTE only used for the original, non-null sdp_minimize method
-        #linear_inhomogeneous_penalty = (
+        # linear_inhomogeneous_penalty = (
         #    quad_cons_grad,
         #    np.asarray(quad_cons_grad.dot(param_array) - quad_cons_val)[0],
-        #)
+        # )
 
         # get the null space projector
         A, b = linear_inhomogeneous_eq
@@ -598,8 +625,13 @@ def solve_bootstrap(
 
         logger.info(
             "step %d/%d: objective=%.4f, max_quad_violation=%.4e, ||param||=%.4e",
-            step + 1, maxiters,
-            linear_objective_vector @ param_array if linear_objective_vector is not None else float("nan"),
+            step + 1,
+            maxiters,
+            (
+                linear_objective_vector @ param_array
+                if linear_objective_vector is not None
+                else float("nan")
+            ),
             max_quad_constraint_violation,
             np.linalg.norm(param_array),
         )
@@ -608,8 +640,12 @@ def solve_bootstrap(
         optimization_result["PRNG_seed"] = PRNG_seed
 
         # record the boostrap matrix
-        optimization_result["bootstrap_matrix_real"] = bootstrap.get_bootstrap_matrix(param=param_array).real.tolist()
-        optimization_result["bootstrap_matrix_imag"] = bootstrap.get_bootstrap_matrix(param=param_array).imag.tolist()
+        optimization_result["bootstrap_matrix_real"] = bootstrap.get_bootstrap_matrix(
+            param=param_array
+        ).real.tolist()
+        optimization_result["bootstrap_matrix_imag"] = bootstrap.get_bootstrap_matrix(
+            param=param_array
+        ).imag.tolist()
 
         # terminate early if the tolerance is satisfied
         if step > (10 - 2) and max_quad_constraint_violation < tol:

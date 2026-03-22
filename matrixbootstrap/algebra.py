@@ -1,10 +1,10 @@
+import pickle
 from numbers import Number
 from typing import (
     Self,
     Union,
-    Optional
 )
-import pickle
+
 import numpy as np
 
 TOL = 1e-12
@@ -51,7 +51,6 @@ class AbstractMatrixOperator:
 
     def __neg__(self) -> Self:
         return self.__class__(data={op: -coeff for op, coeff in self})
-
 
     def __rmul__(self, other: Number):
         if isinstance(other, Number):
@@ -490,12 +489,12 @@ class MatrixSystem:
 class LinearConstraints:
     # NOTE this is incomplete and unused
     def __init__(
-            self,
-            matrix_system: MatrixSystem,
-            set_of_all_operators: set,
-            data : list[SingleTraceOperator]=[],
-            zero_cache : set=set()
-            ):
+        self,
+        matrix_system: MatrixSystem,
+        set_of_all_operators: set,
+        data: list[SingleTraceOperator] = [],
+        zero_cache: set = set(),
+    ):
         self.matrix_system = matrix_system
         self.set_of_all_operators = set_of_all_operators
         self.data = data
@@ -511,7 +510,7 @@ class LinearConstraints:
         if (
             all([op in self.set_of_all_operators for op in constraint.data])
             and not constraint.is_zero()
-            ):
+        ):
 
             # if the constraint sets a basis operator to zero, record it in the cache
             if len(constraint) == 1:
@@ -523,10 +522,19 @@ class LinearConstraints:
         if not isinstance(other, self.__class__):
             raise ValueError(f"Cannot add {type(other)} and {self.__class__.__name__}")
         if self.matrix_system != other.matrix_system:
-            raise ValueError("Error, cannot add constraints with different matrix systems")
+            raise ValueError(
+                "Error, cannot add constraints with different matrix systems"
+            )
         if self.set_of_all_operators != other.set_of_all_operators:
-            raise ValueError("Error, cannot add constraints with different sets of all operators")
-        return self.__class__(matrix_system=self.matrix_system, set_of_all_operators=self.set_of_all_operators, data=self.data + other.data, zero_cache=self.zero_cache | other.zero_cache)
+            raise ValueError(
+                "Error, cannot add constraints with different sets of all operators"
+            )
+        return self.__class__(
+            matrix_system=self.matrix_system,
+            set_of_all_operators=self.set_of_all_operators,
+            data=self.data + other.data,
+            zero_cache=self.zero_cache | other.zero_cache,
+        )
 
     def __iter__(self):
         for constraint in self.data:
