@@ -274,9 +274,6 @@ class MatrixSystem:
     ):
         self.operator_basis = operator_basis
 
-        logger.warning("Assuming all operators are either Hermitian or anti-Hermitian.")
-        # self.hermitian_dict = {op_str: ('X' in op_str) for op_str in self.operator_basis}
-        # self.hermitian_dict = {op_str: True for op_str in self.operator_basis}
         self.hermitian_dict = hermitian_dict
         if set(hermitian_dict.keys()) != set(operator_basis):
             raise ValueError(

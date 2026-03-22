@@ -613,8 +613,8 @@ def solve_bootstrap(
                 cvxpy_solver=cvxpy_solver,
             )
 
-        except Exception:
-            logger.exception("sdp_minimize_null failed at step %d", step + 1)
+        except Exception as e:
+            logger.warning("sdp_minimize_null failed at step %d: %s", step + 1, e)
             return None, None
 
         # interpolate between the old and new solutions
