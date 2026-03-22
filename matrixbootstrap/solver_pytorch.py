@@ -9,13 +9,13 @@ from torch.nn import ReLU
 from torch.optim.lr_scheduler import ExponentialLR
 #import lightning as L
 
-from bmn.algebra import SingleTraceOperator
-from bmn.bootstrap import BootstrapSystem
-from bmn.debug_utils import debug
-from bmn.solver_trustregion import (
+from matrixbootstrap.algebra import SingleTraceOperator
+from matrixbootstrap.bootstrap import BootstrapSystem
+from matrixbootstrap.debug_utils import debug
+from matrixbootstrap.solver_trustregion import (
     get_quadratic_constraint_vector_sparse as get_quadratic_constraint_vector,
 )
-from bmn.linear_algebra import get_null_space_dense
+from matrixbootstrap.linear_algebra import get_null_space_dense
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 #device = torch.device("cpu")

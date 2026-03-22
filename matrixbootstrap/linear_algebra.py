@@ -12,7 +12,7 @@ from scipy.sparse import (
 from scipy.sparse.linalg import svds
 from sparseqr import qr
 
-from bmn.debug_utils import debug
+from matrixbootstrap.debug_utils import debug
 
 TOL = 1e-9
 

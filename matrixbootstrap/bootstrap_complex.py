@@ -18,14 +18,14 @@ from scipy.sparse import (
     vstack,
 )
 
-from bmn.algebra import (
+from matrixbootstrap.algebra import (
     DoubleTraceOperator,
     MatrixOperator,
     MatrixSystem,
     SingleTraceOperator,
 )
-from bmn.debug_utils import debug
-from bmn.linear_algebra import (
+from matrixbootstrap.debug_utils import debug
+from matrixbootstrap.linear_algebra import (
     create_sparse_matrix_from_dict,
     get_null_space_sparse,
     get_real_coefficients_from_dict,

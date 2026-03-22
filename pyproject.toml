@@ -1,10 +1,10 @@
 [tool.poetry]
-name = "bmnsim"
+name = "matrixbootstrap"
 version = "0.1.0"
 description = "Matrix bootstrap for quantum mechanical matrix models"
 authors = ["Gavin Hartnett <gshartnett@gmail.com>"]
 readme = "README.md"
-packages = [{include = "bmn"}]
+packages = [{include = "matrixbootstrap"}]
 
 
 [tool.poetry.dependencies]

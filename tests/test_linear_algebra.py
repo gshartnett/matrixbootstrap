@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from bmn.linear_algebra import get_real_coefficients_from_dict
+from matrixbootstrap.linear_algebra import get_real_coefficients_from_dict
 
 
 def test_get_real_coefficients():

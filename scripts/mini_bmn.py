@@ -1,5 +1,5 @@
 import numpy as np
-from bmn.config_utils import generate_configs_bmn, run_all_configs
+from matrixbootstrap.config_utils import generate_configs_bmn, run_all_configs
 
 # generate the config files
 L = 3

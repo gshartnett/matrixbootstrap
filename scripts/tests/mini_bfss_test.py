@@ -1,4 +1,4 @@
-from bmn.config_utils import generate_config_bfss, run_all_configs
+from matrixbootstrap.config_utils import generate_config_bfss, run_all_configs
 
 # generate the config files
 L = 3
