@@ -8,15 +8,6 @@ import numpy as np
 import pandas as pd
 from cycler import cycler
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
-from scipy import (
-    integrate,
-    interpolate,
-    optimize,
-)
-from scipy.interpolate import (
-    RBFInterpolator,
-    griddata,
-)
 
 from matrixbootstrap.born_oppenheimer import BornOppenheimer
 from matrixbootstrap.brezin import compute_Brezin_energy
@@ -530,7 +521,7 @@ def make_figure_two_matrix_mass_vs_E(extension="pdf", reg=1e-4):
             "figures/" + "_".join(this_function_name.split("_")[2:]) + f"_reg_{reg:.2e}"
         )
     else:
-        ax.set_title(f"TwoMatrix, SO(2) sym, min. energy")
+        ax.set_title("TwoMatrix, SO(2) sym, min. energy")
         filename = "figures/" + "_".join(this_function_name.split("_")[2:]) + "_all_reg"
 
     plt.tight_layout()

@@ -1,26 +1,20 @@
+import logging
 from typing import Optional
 
-import cvxpy as cp
 import numpy as np
-import scipy.sparse as sparse
 import torch
 import torch.optim as optim
 from torch.nn import ReLU
 from torch.optim.lr_scheduler import ExponentialLR
-#import lightning as L
 
 from matrixbootstrap.algebra import SingleTraceOperator
 from matrixbootstrap.bootstrap import BootstrapSystem
-import logging
-
-logger = logging.getLogger(__name__)
-from matrixbootstrap.solver_trustregion import (
-    get_quadratic_constraint_vector_sparse as get_quadratic_constraint_vector,
-)
 from matrixbootstrap.linear_algebra import get_null_space_dense
 
+logger = logging.getLogger(__name__)
+
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-#device = torch.device("cpu")
+# device = torch.device("cpu")
 torch_dtype = torch.float64
 
 
@@ -80,7 +74,9 @@ def solve_bootstrap(
     # convert to torch tensor
     A = torch.from_numpy(A).type(torch_dtype).to(device)
     b = torch.from_numpy(b).type(torch_dtype).to(device)
-    null_space_projector = torch.from_numpy(null_space_projector).type(torch_dtype).to(device)
+    null_space_projector = (
+        torch.from_numpy(null_space_projector).type(torch_dtype).to(device)
+    )
 
     # get the vector of the operator to bound (minimize)
     vec = bootstrap.single_trace_to_coefficient_vector(
@@ -89,9 +85,8 @@ def solve_bootstrap(
     vec = torch.from_numpy(vec).type(torch_dtype).to(device)
 
     # build the bootstrap array
-    bootstrap_table = (
-        torch.from_numpy(bootstrap.bootstrap_table_sparse.todense())
-        .to(device)
+    bootstrap_table = torch.from_numpy(bootstrap.bootstrap_table_sparse.todense()).to(
+        device
     )
 
     # build the constraints
@@ -145,11 +140,15 @@ def solve_bootstrap(
 
         # complex bootstrap matrix
         if torch.max(torch.abs(bootstrap_table.imag)) > 1e-10:
-            #debug("Mapping complex bootstrap table to real") # this prints every single iteration, not just evey 100
+            # debug("Mapping complex bootstrap table to real") # this prints every single iteration, not just evey 100
             bootstrap_table_real = bootstrap_table.real
             bootstrap_table_imag = bootstrap_table.imag
-            matrix_real = (bootstrap_table_real @ param).reshape((bootstrap.bootstrap_matrix_dim, bootstrap.bootstrap_matrix_dim))
-            matrix_imag = (bootstrap_table_imag @ param).reshape((bootstrap.bootstrap_matrix_dim, bootstrap.bootstrap_matrix_dim))
+            matrix_real = (bootstrap_table_real @ param).reshape(
+                (bootstrap.bootstrap_matrix_dim, bootstrap.bootstrap_matrix_dim)
+            )
+            matrix_imag = (bootstrap_table_imag @ param).reshape(
+                (bootstrap.bootstrap_matrix_dim, bootstrap.bootstrap_matrix_dim)
+            )
             # stack them
             top_row = torch.cat((matrix_real, -matrix_imag), dim=1)
             bottom_row = torch.cat((matrix_imag, matrix_real), dim=1)
@@ -160,12 +159,18 @@ def solve_bootstrap(
             bootstrap_matrix = (bootstrap_table.real @ param).reshape(
                 (bootstrap.bootstrap_matrix_dim, bootstrap.bootstrap_matrix_dim)
             )
-        #smallest_eigv = torch.linalg.eigvalsh(bootstrap_matrix)[0]
-        #smallest_eigv = torch.real(smallest_eigv)
-        #return ReLU()(-smallest_eigv)
+        # smallest_eigv = torch.linalg.eigvalsh(bootstrap_matrix)[0]
+        # smallest_eigv = torch.real(smallest_eigv)
+        # return ReLU()(-smallest_eigv)
 
         # return the l2 norm of the vector of negative eigenvalues
-        return torch.sqrt(torch.sum(torch.square(ReLU()(-torch.real(torch.linalg.eigvalsh(bootstrap_matrix))))))
+        return torch.sqrt(
+            torch.sum(
+                torch.square(
+                    ReLU()(-torch.real(torch.linalg.eigvalsh(bootstrap_matrix)))
+                )
+            )
+        )
 
     def build_loss(param_null, param_particular, penalty_reg=penalty_reg):
         loss = (
@@ -173,16 +178,20 @@ def solve_bootstrap(
             + penalty_reg * psd_loss(param_null, param_particular)
             + penalty_reg * quadratic_loss(param_null, param_particular)
             + penalty_reg * Axb_loss(param_null, param_particular)
-            #+ 1e2 * torch.abs(torch.linalg.norm(get_full_param(param_null, param_particular)) - 1e3)
+            # + 1e2 * torch.abs(torch.linalg.norm(get_full_param(param_null, param_particular)) - 1e3)
         )
         return loss
 
     # initialize the variable vector
     if init is None:
         init = init_scale * np.random.randn(bootstrap.param_dim_null)
-        param_particular = np.linalg.lstsq(A.cpu().numpy(), b.cpu().numpy(), rcond=None)[0]
+        param_particular = np.linalg.lstsq(
+            A.cpu().numpy(), b.cpu().numpy(), rcond=None
+        )[0]
         param_null = init
-        logger.debug(f"Initializing param to be the least squares solution of Ax=b plus Gaussian noise with scale = {init_scale}.")
+        logger.debug(
+            f"Initializing param to be the least squares solution of Ax=b plus Gaussian noise with scale = {init_scale}."
+        )
     else:
         raise ValueError
         param_null = init
@@ -194,7 +203,9 @@ def solve_bootstrap(
     param_null.requires_grad = True
     param_particular = torch.tensor(param_particular).type(torch_dtype).to(device)
 
-    print(f"Axb_loss={Axb_loss(param_null=param_null, param_particular=param_particular)}")
+    print(
+        f"Axb_loss={Axb_loss(param_null=param_null, param_particular=param_particular)}"
+    )
     print(f"A @ param = {A @ (null_space_projector @ param_null + param_particular)}")
 
     # optimizer
@@ -213,12 +224,45 @@ def solve_bootstrap(
 
             if ((epoch + 1) % 100 == 0) or (epoch == num_epochs - 1):
                 total_loss = loss.detach().cpu().item()
-                operator_value = operator_loss(param_null=param_null, param_particular=param_particular).detach().cpu().item()
-                violation_of_linear_constraints = Axb_loss(param_null=param_null, param_particular=param_particular).detach().cpu().item()
-                min_bootstrap_eigenvalue = psd_loss(param_null=param_null, param_particular=param_particular).detach().cpu().item()
-                quad_constraint_violation_norm = quadratic_loss(param_null=param_null, param_particular=param_particular).detach().cpu().item()
-                quad_constraint_violation_max = quadratic_constraint_max(param_null=param_null, param_particular=param_particular).detach().cpu().item()
-                param_norm = torch.linalg.norm(get_full_param(param_null, param_particular))
+                operator_value = (
+                    operator_loss(
+                        param_null=param_null, param_particular=param_particular
+                    )
+                    .detach()
+                    .cpu()
+                    .item()
+                )
+                violation_of_linear_constraints = (
+                    Axb_loss(param_null=param_null, param_particular=param_particular)
+                    .detach()
+                    .cpu()
+                    .item()
+                )
+                min_bootstrap_eigenvalue = (
+                    psd_loss(param_null=param_null, param_particular=param_particular)
+                    .detach()
+                    .cpu()
+                    .item()
+                )
+                quad_constraint_violation_norm = (
+                    quadratic_loss(
+                        param_null=param_null, param_particular=param_particular
+                    )
+                    .detach()
+                    .cpu()
+                    .item()
+                )
+                _quad_constraint_violation_max = (
+                    quadratic_constraint_max(
+                        param_null=param_null, param_particular=param_particular
+                    )
+                    .detach()
+                    .cpu()
+                    .item()
+                )
+                param_norm = torch.linalg.norm(
+                    get_full_param(param_null, param_particular)
+                )
 
                 logger.debug(
                     f"epoch: {epoch+1}/{num_epochs}, lr: {scheduler.get_last_lr()[0]:.3e} total_loss: {total_loss:.3e}: op_loss: {operator_value:.5f}, ||x||: {param_norm:.3e}, ||Ax-b||: {violation_of_linear_constraints:.3e}, min_eig: {min_bootstrap_eigenvalue:.3e}, ||quad cons||: {quad_constraint_violation_norm:.3e}"
@@ -232,16 +276,36 @@ def solve_bootstrap(
     optimization_result = {
         "solver": "pytorch",
         "num_epochs": num_epochs,
-        "operator_loss": float(operator_loss(param_null=param_null, param_particular=param_particular).detach().cpu().item()),
-        "violation_of_linear_constraints": float(Axb_loss(param_null=param_null, param_particular=param_particular).detach().cpu().item()),
-        "min_bootstrap_eigenvalue": float(psd_loss(param_null=param_null, param_particular=param_particular).detach().cpu().item()),
-        "quad_constraint_violation_norm": float(quadratic_loss(param_null=param_null, param_particular=param_particular).detach().cpu().item()),
-        "max_quad_constraint_violation": float(torch.max(
-            torch.abs(get_quadratic_constraint_vector(param_final))
-        )
-        .detach()
-        .cpu()
-        .item()),
+        "operator_loss": float(
+            operator_loss(param_null=param_null, param_particular=param_particular)
+            .detach()
+            .cpu()
+            .item()
+        ),
+        "violation_of_linear_constraints": float(
+            Axb_loss(param_null=param_null, param_particular=param_particular)
+            .detach()
+            .cpu()
+            .item()
+        ),
+        "min_bootstrap_eigenvalue": float(
+            psd_loss(param_null=param_null, param_particular=param_particular)
+            .detach()
+            .cpu()
+            .item()
+        ),
+        "quad_constraint_violation_norm": float(
+            quadratic_loss(param_null=param_null, param_particular=param_particular)
+            .detach()
+            .cpu()
+            .item()
+        ),
+        "max_quad_constraint_violation": float(
+            torch.max(torch.abs(get_quadratic_constraint_vector(param_final)))
+            .detach()
+            .cpu()
+            .item()
+        ),
     }
 
     # convert to a list of floats (no numpy float types, so that the result can be saved as a json later)

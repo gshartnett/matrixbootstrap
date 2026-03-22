@@ -8,8 +8,9 @@ J. Res. Natl. Bur. Stand., Sect. B 79 (1975): 49.
 """
 
 from sparseqr import qr
-from matrixbootstrap.linear_algebra import create_sparse_matrix_from_dict
+
 from matrixbootstrap.bootstrap import BootstrapSystem
+from matrixbootstrap.linear_algebra import create_sparse_matrix_from_dict
 from matrixbootstrap.models import MiniBMN
 
 d = 3
@@ -25,7 +26,7 @@ bootstrap = BootstrapSystem(
     symmetry_generators=model.symmetry_generators,
     checkpoint_path=checkpoint_path,
     verbose=True,
-    )
+)
 
 # build the symmetries
 symmetry_constrained = bootstrap.generate_symmetry_constraints()
@@ -44,10 +45,12 @@ num_isotropic_tensors_of_rank_n = {
 }
 
 # loop over ranks
-for total_rank in range(2, 2*L+1):
+for total_rank in range(2, 2 * L + 1):
 
     # get subset of constraints for a given rank
-    symmetry_constraints_by_rank = [op for op in symmetry_constrained_cleaned if op.max_degree == total_rank]
+    symmetry_constraints_by_rank = [
+        op for op in symmetry_constrained_cleaned if op.max_degree == total_rank
+    ]
 
     # build the index-value dict
     index_value_dict = {}
@@ -63,8 +66,12 @@ for total_rank in range(2, 2*L+1):
 
     _, _, _, num_independent_constraints = qr(linear_constraint_matrix.transpose())
     num_isotropic_tensors = 2**total_rank * num_isotropic_tensors_of_rank_n[total_rank]
-    check = ((2*d)**total_rank) == (num_independent_constraints + num_isotropic_tensors)
+    check = ((2 * d) ** total_rank) == (
+        num_independent_constraints + num_isotropic_tensors
+    )
 
     print(f"rank: {total_rank}:")
-    print(f"  terms: {(2*d)**total_rank}, constraints: {num_independent_constraints}, isotropic tensors: {num_isotropic_tensors}")
+    print(
+        f"  terms: {(2*d)**total_rank}, constraints: {num_independent_constraints}, isotropic tensors: {num_isotropic_tensors}"
+    )
     print(f"  check: {check}")

@@ -1,6 +1,9 @@
 import numpy as np
-from matrixbootstrap.config_utils import generate_configs_two_matrix, run_all_configs, run_bootstrap_from_config
 
+from matrixbootstrap.config_utils import (
+    generate_configs_two_matrix,
+    run_all_configs,
+)
 
 ## energy held fixed
 L = 3
@@ -8,8 +11,8 @@ g2 = 1
 checkpoint_path = f"TwoMatrix_L_{L}_symmetric_{g2}"
 
 config_dir = f"TwoMatrix_L_{L}_symmetric_energy_fixed_g2_{g2}"
-#config_dir = f"TwoMatrix_L_{L}_symmetric_energy_fixed_g2_{g2}_pytorch"
-#config_dir = f"TwoMatrix_L_{L}_symmetric_energy_fixed_g2_{g2}_newton_Axb"
+# config_dir = f"TwoMatrix_L_{L}_symmetric_energy_fixed_g2_{g2}_pytorch"
+# config_dir = f"TwoMatrix_L_{L}_symmetric_energy_fixed_g2_{g2}_newton_Axb"
 
 for st_operator_to_minimize in ["x_2", "neg_x_2"]:
     for energy in np.linspace(0.9, 1.4, 81):
@@ -26,18 +29,15 @@ for st_operator_to_minimize in ["x_2", "neg_x_2"]:
             checkpoint_path=checkpoint_path,
             impose_symmetries=True,
             optimization_method="newton",
-            cvxpy_solver='MOSEK',
+            cvxpy_solver="MOSEK",
             maxiters=30,
             init_scale=1e-2,
             reg=1e-4,
             penalty_reg=0,
             tol=1e-7,
-            )
+        )
 
 # execute
 run_all_configs(
-    config_dir=config_dir,
-    parallel=True,
-    max_workers=6,
-    check_if_exists_already=True
-    )
+    config_dir=config_dir, parallel=True, max_workers=6, check_if_exists_already=True
+)

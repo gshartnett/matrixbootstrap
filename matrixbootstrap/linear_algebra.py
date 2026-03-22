@@ -1,3 +1,4 @@
+import logging
 from numbers import Number
 
 import numpy as np
@@ -9,10 +10,7 @@ from scipy.sparse import (
     coo_matrix,
     csc_matrix,
 )
-from scipy.sparse.linalg import svds
 from sparseqr import qr
-
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +132,9 @@ def get_null_space_sparse(matrix, tol: float = TOL):
     q, _, _, rank = qr(matrix.transpose())
     null_space_matrix = csc_matrix(q)[:, rank:]
     logger.debug(
-        "get_null_space_sparse: null space shape %s (rank=%d)", null_space_matrix.shape, rank
+        "get_null_space_sparse: null space shape %s (rank=%d)",
+        null_space_matrix.shape,
+        rank,
     )
     verification_result = matrix @ null_space_matrix
     violation = np.max(np.abs(verification_result))

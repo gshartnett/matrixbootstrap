@@ -1,5 +1,9 @@
 import numpy as np
-from matrixbootstrap.config_utils import generate_config_three_matrix, run_all_configs
+
+from matrixbootstrap.config_utils import (
+    generate_config_three_matrix,
+    run_all_configs,
+)
 
 L = 3
 
@@ -8,7 +12,7 @@ nu = 1
 
 g2 = float(np.round(nu**2, decimals=6))
 g4 = lambd
-#g3 = float(3 * nu * np.sqrt(lambd)) # set g3 to zero, while keeping g2 and g4 related as in the MiniBFSS model
+# g3 = float(3 * nu * np.sqrt(lambd)) # set g3 to zero, while keeping g2 and g4 related as in the MiniBFSS model
 g3 = 0.1
 
 energy = 2.5
@@ -28,11 +32,13 @@ generate_config_three_matrix(
     simplify_quadratic=True,
     st_operator_to_minimize=st_operator_to_minimize,
     st_operators_evs_to_set={"energy": energy},
-    #optimization_method="pytorch",
+    # optimization_method="pytorch",
     optimization_method="newton",
-    cvxpy_solver='MOSEK',
+    cvxpy_solver="MOSEK",
     reg=1e-5,
-    )
+)
 
 # execute
-run_all_configs(config_dir=f"ThreeMatrix_L_{L}_test", parallel=False, check_if_exists_already=False)
+run_all_configs(
+    config_dir=f"ThreeMatrix_L_{L}_test", parallel=False, check_if_exists_already=False
+)

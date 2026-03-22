@@ -1,4 +1,7 @@
-from matrixbootstrap.config_utils import generate_config_bmn, run_all_configs
+from matrixbootstrap.config_utils import (
+    generate_config_bmn,
+    run_all_configs,
+)
 
 # generate the config files
 L = 3
@@ -20,16 +23,14 @@ generate_config_bmn(
     simplify_quadratic=True,
     st_operator_to_minimize=st_operator_to_minimize,
     st_operators_evs_to_set={"energy": energy},
-    #optimization_method="pytorch",
+    # optimization_method="pytorch",
     optimization_method="newton",
-    cvxpy_solver='MOSEK',
-    #maxiters=1,
-    #reg=1e-5,
-    )
+    cvxpy_solver="MOSEK",
+    # maxiters=1,
+    # reg=1e-5,
+)
 
 # execute
 run_all_configs(
-    config_dir=f"MiniBMN_L_{L}_test",
-    parallel=False,
-    check_if_exists_already=False
-    )
+    config_dir=f"MiniBMN_L_{L}_test", parallel=False, check_if_exists_already=False
+)

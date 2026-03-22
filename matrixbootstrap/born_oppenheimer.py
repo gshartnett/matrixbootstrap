@@ -10,6 +10,7 @@ class BornOppenheimer:
     The Born-Oppenheimer model for the 2 matrix model,
     see https://doi.org/10.1103/PhysRevLett.125.041601.
     """
+
     def __init__(self, m=None, g=None, g2=None, g4=None):
         """
         Support initialization with either m, g (HHK conventions) or g2, g4 (my conventions).
@@ -19,13 +20,13 @@ class BornOppenheimer:
             self.g = g
             self.g2 = g2
             self.g4 = g4
-            #self.g2 = m**2
-            #self.g4 = 4*g**2
+            # self.g2 = m**2
+            # self.g4 = 4*g**2
         elif m is None and g is None and g2 is not None and g4 is not None:
             self.g2 = g2
             self.g4 = g4
             self.m = np.sqrt(g2)
-            self.g = np.sqrt(g4)/2
+            self.g = np.sqrt(g4) / 2
 
     def normalization_constraint(self, rho: np.ndarray, x_grid: np.ndarray) -> float:
         """
@@ -160,7 +161,10 @@ class BornOppenheimer:
 
         # convert to my notation if necessary by adding a factor of 1/2
         if self.g2 is not None:
-            energy_func = lambda rho, grid: self.E_BO_discretized(rho, grid) / 2
+
+            def energy_func(rho, grid):
+                return self.E_BO_discretized(rho, grid) / 2
+
         else:
             energy_func = self.E_BO_discretized
 
@@ -180,7 +184,7 @@ class BornOppenheimer:
         return result
 
 
-def main(m: float=1, g: float=1, npoints: int=100):
+def main(m: float = 1, g: float = 1, npoints: int = 100):
 
     # define the x grid
     x_min, x_max = -3, 3
@@ -198,9 +202,15 @@ def main(m: float=1, g: float=1, npoints: int=100):
     result = born_oppenheimer.solve(x_grid=x_grid)
     optimal_energy_me = result.fun
 
-    print(f"Minimum BO energy for m={m}, g={g}: E={optimal_energy_HHK:.4f} (HHK conventions)")
-    print(f"Minimum BO energy for g2={born_oppenheimer.g2}, g4={born_oppenheimer.g4}: E={optimal_energy_me:.4f} (my conventions)")
-    print(f"The results should be off by a factor of two: diff={(optimal_energy_me - optimal_energy_HHK / 2):.4e}.")
+    print(
+        f"Minimum BO energy for m={m}, g={g}: E={optimal_energy_HHK:.4f} (HHK conventions)"
+    )
+    print(
+        f"Minimum BO energy for g2={born_oppenheimer.g2}, g4={born_oppenheimer.g4}: E={optimal_energy_me:.4f} (my conventions)"
+    )
+    print(
+        f"The results should be off by a factor of two: diff={(optimal_energy_me - optimal_energy_HHK / 2):.4e}."
+    )
 
     # massless case
     g2 = 0
@@ -208,7 +218,9 @@ def main(m: float=1, g: float=1, npoints: int=100):
     born_oppenheimer = BornOppenheimer(g2=g2, g4=g4)
     result = born_oppenheimer.solve(x_grid=x_grid)
     optimal_energy_me = result.fun
-    print(f"\nMinimum BO energy for g2={born_oppenheimer.g2}, g4={born_oppenheimer.g4}: E={optimal_energy_me:.4f} (my conventions)")
+    print(
+        f"\nMinimum BO energy for g2={born_oppenheimer.g2}, g4={born_oppenheimer.g4}: E={optimal_energy_me:.4f} (my conventions)"
+    )
 
 
 if __name__ == "__main__":
