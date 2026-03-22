@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from concurrent.futures import ProcessPoolExecutor
 
@@ -530,6 +531,10 @@ def run_bootstrap_from_config(
     return result
 
 
+def _init_worker_logging():
+    logging.basicConfig(level=logging.INFO)
+
+
 def run_all_configs(
     config_dir,
     parallel=False,
@@ -550,7 +555,9 @@ def run_all_configs(
                 check_if_exists_already=check_if_exists_already,
             )
     else:
-        with ProcessPoolExecutor(max_workers) as executor:
+        with ProcessPoolExecutor(
+            max_workers, initializer=_init_worker_logging
+        ) as executor:
             futures = [
                 executor.submit(
                     run_bootstrap_from_config,
