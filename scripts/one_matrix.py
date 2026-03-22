@@ -38,6 +38,7 @@ for L in [3, 4]:
                         g4=g4,
                         g6=g6,
                         max_degree_L=L,
+                        optimization_method="newton",
                         maxiters_cvxpy=5_000,
                         maxiters=100,
                         radius=1e6,
