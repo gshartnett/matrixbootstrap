@@ -37,7 +37,7 @@ for st_operator_to_minimize in ["x_2", "x_4", "neg_x_2", "neg_commutator_squared
                 st_operator_to_minimize=st_operator_to_minimize,
                 st_operators_evs_to_set={"energy": energy},
                 optimization_method="newton",
-                cvxpy_solver="MOSEK",
+                cvxpy_solver="SCS",
                 maxiters=30,
                 init_scale=1e-2,
                 reg=1e-5,

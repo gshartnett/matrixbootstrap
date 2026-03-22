@@ -30,7 +30,7 @@ generate_config_two_matrix(
     # optimization_method="pytorch",
     init_scale=1e-1,
     optimization_method="newton",
-    cvxpy_solver="MOSEK",
+    cvxpy_solver="SCS",
     reg=1e-5,
 )
 

@@ -33,7 +33,7 @@ for st_operator_to_minimize in ["x_2", "neg_x_2"]:
             checkpoint_path=checkpoint_path,
             impose_symmetries=True,
             optimization_method="newton",
-            cvxpy_solver="MOSEK",
+            cvxpy_solver="SCS",
             maxiters=30,
             init_scale=1e-2,
             reg=1e-4,
