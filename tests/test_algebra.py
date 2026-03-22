@@ -5,6 +5,63 @@ from matrixbootstrap.algebra import (
 )
 
 
+def _single_trace_commutator_bubblesort(
+    matrix_system: MatrixSystem,
+    st_operator1: SingleTraceOperator,
+    st_operator2: SingleTraceOperator,
+) -> SingleTraceOperator:
+    """
+    Alternative implementation of the single-trace commutator using a
+    bubble-sort algorithm. Kept here as a reference implementation to
+    cross-check single_trace_commutator.
+
+    For two monomial-type terms such as O1 = tr(ABC), O2 = tr(DEF),
+    the commutator [O1, O2] is computed by bubble-sorting each element
+    of op1 past all elements of op2, collecting commutator terms at each swap.
+    For example, [ABC, DEF] proceeds as:
+
+        ABCDEF
+        = ABDCEF + AB[C,D]EF
+        = ABDECF + ABD[C,E]F + ...
+        = ABDEFC + ABDE[C,F] + ...
+        ...
+        = DEFABC + DE[A,F]BC + ...
+
+    Collecting terms: [ABC, DEF] = AB[C,D]EF + ... + DE[A,F]BC.
+    """
+    new_data = {}
+    for op1, coeff1 in st_operator1:
+        for op2, coeff2 in st_operator2:
+            combined_list = [(i, v) for i, v in enumerate(op1)] + [
+                (i + len(op1), v) for i, v in enumerate(op2)
+            ]
+            for i in range(len(op1)):
+                for j in range(len(op1) + len(op2) - 1):
+                    if (
+                        j < len(combined_list) - 1
+                        and combined_list[j][0] < len(op1)
+                        and combined_list[j + 1][0] >= len(op1)
+                    ):
+                        left_term = combined_list[j][1]
+                        right_term = combined_list[j + 1][1]
+                        combined_list[j], combined_list[j + 1] = (
+                            combined_list[j + 1],
+                            combined_list[j],
+                        )
+                        op = tuple(
+                            x[1]
+                            for k, x in enumerate(combined_list)
+                            if k not in [j, j + 1]
+                        )
+                        new_data[op] = (
+                            new_data.get(op, 0)
+                            + coeff1
+                            * coeff2
+                            * matrix_system.commutation_rules[(left_term, right_term)]
+                        )
+    return SingleTraceOperator(data=new_data)
+
+
 def test_instantiate_single_trace_operator():
     """
     Make sure that the single trace operator instantiation is
@@ -38,7 +95,7 @@ def test_single_trace_commutator_onematrix():
         data={("P", "P"): 2j, ("X", "X"): -2j, ("X", "X", "X", "X"): -4 * 7j}
     )
     assert matrix_system.single_trace_commutator(OP1, OP2) == expected
-    assert matrix_system.single_trace_commutator2(OP1, OP2) == expected
+    assert _single_trace_commutator_bubblesort(matrix_system, OP1, OP2) == expected
 
 
 def test_single_trace_commutator_twomatrix():
