@@ -267,7 +267,7 @@ class BootstrapSystem:
         """
         Use large-N factorization <tr(O1)tr(O2)> = <tr(O1)><tr(O2)> to
         represent the double-trace operator as a quadratic expression
-        of single trace operators, \sum_{ij} M_{ij} v_i v_j.
+        of single trace operators, sum_{ij} M_{ij} v_i v_j.
 
         The matrix M is returned and stored as a COO matrix.
 
