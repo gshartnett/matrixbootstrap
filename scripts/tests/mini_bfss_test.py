@@ -21,7 +21,7 @@ generate_config_bfss(
     st_operators_evs_to_set={"energy": energy},
     # optimization_method="pytorch",
     optimization_method="newton",
-    cvxpy_solver="MOSEK",
+    cvxpy_solver="SCS",
     reg=1e-4,
 )
 

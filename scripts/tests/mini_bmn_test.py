@@ -25,7 +25,7 @@ generate_config_bmn(
     st_operators_evs_to_set={"energy": energy},
     # optimization_method="pytorch",
     optimization_method="newton",
-    cvxpy_solver="MOSEK",
+    cvxpy_solver="SCS",
     # maxiters=1,
     # reg=1e-5,
 )
