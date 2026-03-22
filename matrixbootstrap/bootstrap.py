@@ -205,7 +205,7 @@ class BootstrapSystem:
 
         # load the null space matrix
         if os.path.exists(path + "/null_space_matrix.npz"):
-            self.null_space_matrix = load_npz(path + "/null_space_matrix.npz")
+            self.null_space_matrix = load_npz(path + "/null_space_matrix.npz").copy()
             self.param_dim_null = self.null_space_matrix.shape[1]
             logger.info("  loaded previously computed null space matrix")
 
@@ -218,10 +218,10 @@ class BootstrapSystem:
             quadratic_constraints_numerical = {}
             quadratic_constraints_numerical["linear"] = load_npz(
                 path + "/quadratic_constraints_numerical_linear_term.npz"
-            )
+            ).copy()
             quadratic_constraints_numerical["quadratic"] = load_npz(
                 path + "/quadratic_constraints_numerical_quadratic_term.npz"
-            )
+            ).copy()
             self.quadratic_constraints_numerical = quadratic_constraints_numerical
             logger.info(
                 "  loaded previously computed quadratic constraints (numerical)"
@@ -229,7 +229,9 @@ class BootstrapSystem:
 
         # load the bootstrap table
         if os.path.exists(path + "/bootstrap_table_sparse.npz"):
-            self.bootstrap_table_sparse = load_npz(path + "/bootstrap_table_sparse.npz")
+            self.bootstrap_table_sparse = load_npz(
+                path + "/bootstrap_table_sparse.npz"
+            ).copy()
             logger.info("  loaded previously computed bootstrap table")
 
     def single_trace_to_coefficient_vector(

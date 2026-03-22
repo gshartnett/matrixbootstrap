@@ -106,10 +106,12 @@ def sdp_minimize(
     # Note: based on the param vector, it could be the case that a complex-valued bootstrap
     # table gives rise to a real bootstrap matrix - e.g., if odd-degree expectation values
     # vanish for the given param vector.
+    # cvxpy's C++ backend requires contiguous float arrays; complex sparse matrices
+    # produce non-contiguous views via .real/.imag. Cast explicitly to float64.
     if np.max(np.abs(bootstrap_table_sparse.imag)) > 1e-10:
         logger.debug("Mapping complex bootstrap matrix to real")
-        bootstrap_table_sparse_real = bootstrap_table_sparse.real
-        bootstrap_table_sparse_imag = bootstrap_table_sparse.imag
+        bootstrap_table_sparse_real = bootstrap_table_sparse.real.astype(np.float64)
+        bootstrap_table_sparse_imag = bootstrap_table_sparse.imag.astype(np.float64)
         matrix_real = cp.reshape(
             bootstrap_table_sparse_real @ param, (matrix_dim, matrix_dim)
         )
@@ -122,7 +124,11 @@ def sdp_minimize(
         constraints = [matrix_block >> 0]
     else:
         constraints = [
-            cp.reshape(bootstrap_table_sparse @ param, (matrix_dim, matrix_dim)) >> 0
+            cp.reshape(
+                bootstrap_table_sparse.real.astype(np.float64) @ param,
+                (matrix_dim, matrix_dim),
+            )
+            >> 0
         ]
 
     constraints += [linear_inhomogeneous_eq[0] @ param == linear_inhomogeneous_eq[1]]
@@ -299,10 +305,12 @@ def sdp_minimize_null(
     # Note: based on the param vector, it could be the case that a complex-valued bootstrap
     # table gives rise to a real bootstrap matrix - e.g., if odd-degree expectation values
     # vanish for the given param vector.
+    # cvxpy's C++ backend requires contiguous float arrays; complex sparse matrices
+    # produce non-contiguous views via .real/.imag. Cast explicitly to float64.
     if np.max(np.abs(bootstrap_table_sparse.imag)) > 1e-10:
         logger.debug("Mapping complex bootstrap matrix to real")
-        bootstrap_table_sparse_real = bootstrap_table_sparse.real
-        bootstrap_table_sparse_imag = bootstrap_table_sparse.imag
+        bootstrap_table_sparse_real = bootstrap_table_sparse.real.astype(np.float64)
+        bootstrap_table_sparse_imag = bootstrap_table_sparse.imag.astype(np.float64)
         matrix_real = cp.reshape(
             bootstrap_table_sparse_real @ param, (matrix_dim, matrix_dim)
         )
@@ -315,7 +323,11 @@ def sdp_minimize_null(
         constraints = [matrix_block >> 0]
     else:
         constraints = [
-            cp.reshape(bootstrap_table_sparse @ param, (matrix_dim, matrix_dim)) >> 0
+            cp.reshape(
+                bootstrap_table_sparse.real.astype(np.float64) @ param,
+                (matrix_dim, matrix_dim),
+            )
+            >> 0
         ]
 
     # constrain param vector to lie within a ball of a given radius
