@@ -520,7 +520,16 @@ def run_bootstrap_from_config(
 
 
 def _init_worker_logging():
+    import warnings
+
     logging.basicConfig(level=logging.INFO)
+    # In parallel workers, suppress per-step detail logs — interleaved output
+    # from multiple workers is unreadable. Only results and errors surface.
+    logging.getLogger("matrixbootstrap.bootstrap").setLevel(logging.WARNING)
+    logging.getLogger("matrixbootstrap.algebra").setLevel(logging.ERROR)
+    logging.getLogger("matrixbootstrap.solver_newton").setLevel(logging.WARNING)
+    # Suppress cvxpy's "Solution may be inaccurate" UserWarning in workers.
+    warnings.filterwarnings("ignore", category=UserWarning, module="cvxpy")
 
 
 def _build_checkpoint_from_config(config_filename, config_dir):
