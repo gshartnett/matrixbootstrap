@@ -18,7 +18,7 @@ g4_values = np.concatenate(
 )
 g6_values = np.linspace(0, g6_max, n_grid)
 
-for L in [3, 4]:
+for L in [3]:
 
     # generate the config files
     for g2 in g2_values:
