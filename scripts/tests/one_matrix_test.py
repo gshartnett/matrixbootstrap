@@ -1,8 +1,12 @@
+import logging
+
 from matrixbootstrap.brezin import compute_Brezin_energy
 from matrixbootstrap.config_utils import (
     generate_config_one_matrix,
     run_all_configs,
 )
+
+logging.basicConfig(level=logging.INFO)
 
 L = 3
 g2 = 1

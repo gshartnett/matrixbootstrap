@@ -1,7 +1,11 @@
+import logging
+
 from matrixbootstrap.config_utils import (
     generate_config_two_matrix,
     run_all_configs,
 )
+
+logging.basicConfig(level=logging.INFO)
 
 L = 3
 g2 = 1.0

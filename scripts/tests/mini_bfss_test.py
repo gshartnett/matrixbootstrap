@@ -1,7 +1,11 @@
+import logging
+
 from matrixbootstrap.config_utils import (
     generate_config_bfss,
     run_all_configs,
 )
+
+logging.basicConfig(level=logging.INFO)
 
 # generate the config files
 L = 3

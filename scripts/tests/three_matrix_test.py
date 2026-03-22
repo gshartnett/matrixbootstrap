@@ -1,9 +1,13 @@
+import logging
+
 import numpy as np
 
 from matrixbootstrap.config_utils import (
     generate_config_three_matrix,
     run_all_configs,
 )
+
+logging.basicConfig(level=logging.INFO)
 
 L = 3
 
