@@ -171,6 +171,22 @@ def _config_id(config_data: dict) -> str:
     return hashlib.sha256(content.encode()).hexdigest()[:12]
 
 
+def _struct_hash(config_data: dict) -> str:
+    """
+    Generate a hex ID from the coupling-independent structural parameters.
+
+    The structural cache (cyclic quadratic constraints) depends only on the
+    model type and max_degree_L, not on coupling values or optimizer settings.
+    """
+    structural = {
+        "model_name": config_data["model"]["model name"],
+        "bootstrap_class": config_data["model"]["bootstrap class"],
+        "max_degree_L": config_data["bootstrap"]["max_degree_L"],
+    }
+    content = json.dumps(structural, sort_keys=True)
+    return hashlib.sha256(content.encode()).hexdigest()[:12]
+
+
 def generate_config_one_matrix(config_dir, g2, g4, g6, optimization_method, **kwargs):
 
     if optimization_method not in ["newton", "pytorch"]:
@@ -425,8 +441,9 @@ def run_bootstrap_from_config(
         couplings=config_model["couplings"]
     )
 
-    # checkpoint path
-    checkpoint_path = f"runs/{config_dir}/checkpoint"
+    # cache paths
+    structural_cache_path = f"cache/structural/{_struct_hash(config)}"
+    config_cache_path = f"cache/per_config/{config_filename}"
 
     # handle the imposition of global symmetries
     if not config_bootstrap["impose_symmetries"]:
@@ -461,15 +478,15 @@ def run_bootstrap_from_config(
         odd_degree_vanish=config_bootstrap["odd_degree_vanish"],
         simplify_quadratic=config_bootstrap["simplify_quadratic"],
         symmetry_generators=model.symmetry_generators,
-        # impose_gauge_symmetry=config_bootstrap["impose_gauge_symmetry"],
-        checkpoint_path=checkpoint_path,
+        structural_cache_path=structural_cache_path,
+        config_cache_path=config_cache_path,
     )
 
-    # load previously-computed constraints
-    if config_bootstrap["load_from_previously_computed"] and os.path.exists(
-        checkpoint_path
-    ):
-        bootstrap.load_constraints(checkpoint_path)
+    # load from cache: structural cache is always used; per-config cache is
+    # used when load_from_previously_computed is set
+    bootstrap.load_structural_cache(structural_cache_path)
+    if config_bootstrap["load_from_previously_computed"]:
+        bootstrap.load_config_cache(config_cache_path)
 
     # solve the bootstrap
     optimization_method = config_optimizer.pop("optimization_method")
@@ -528,27 +545,25 @@ def _init_worker_logging():
     warnings.filterwarnings("ignore", category=UserWarning, module="cvxpy")
 
 
-def _build_checkpoint_from_config(config_filename, config_dir):
+def _build_config_cache(config_filename, config_dir):
     """
-    Build and save the full bootstrap checkpoint for a config without running
-    the optimization. Subsequent runs with the same checkpoint path will load
-    pre-built constraints, null space, quadratic constraints, and bootstrap
-    table rather than regenerating them.
+    Pre-build and save all coupling-dependent cache artifacts for a single config.
+    Subsequent runs will load from cache instead of recomputing.
     """
     with open(f"runs/{config_dir}/configs/{config_filename}.yaml") as stream:
         config = yaml.safe_load(stream)
     config_model = config["model"]
     config_bootstrap = config["bootstrap"]
 
-    checkpoint_path = f"runs/{config_dir}/checkpoint"
+    structural_cache_path = f"cache/structural/{_struct_hash(config)}"
+    config_cache_path = f"cache/per_config/{config_filename}"
 
     # skip if already fully built
-    if os.path.exists(checkpoint_path + "/bootstrap_table_sparse.npz"):
-        logger.info("Checkpoint already complete: %s", checkpoint_path)
+    if os.path.exists(config_cache_path + "/bootstrap_table_sparse.npz"):
+        logger.info("Config cache already complete: %s", config_cache_path)
         return
 
-    logger.info("Building checkpoint: %s", checkpoint_path)
-    os.makedirs(checkpoint_path, exist_ok=True)
+    logger.info("Building config cache: %s", config_cache_path)
 
     model = _MODEL_CLASSES[config_model["model name"]](
         couplings=config_model["couplings"]
@@ -566,8 +581,12 @@ def _build_checkpoint_from_config(config_filename, config_dir):
         odd_degree_vanish=config_bootstrap["odd_degree_vanish"],
         simplify_quadratic=config_bootstrap["simplify_quadratic"],
         symmetry_generators=model.symmetry_generators,
-        checkpoint_path=checkpoint_path,
+        structural_cache_path=structural_cache_path,
+        config_cache_path=config_cache_path,
     )
+
+    # load structural cache (cyclic constraints) if available
+    bootstrap.load_structural_cache(structural_cache_path)
 
     # build and save all components in dependency order
     bootstrap.build_null_space_matrix()  # → build_linear_constraints → generate_constraints
@@ -575,12 +594,13 @@ def _build_checkpoint_from_config(config_filename, config_dir):
     bootstrap.build_bootstrap_table()  # needs null_space_matrix
 
 
-def _build_all_checkpoints(config_filenames, config_dir):
+def _build_all_caches(config_filenames, config_dir):
     """
-    Build the shared checkpoint for this run if not already complete.
-    All configs in a run share the same checkpoint directory.
+    Pre-build per-config caches for all configs in a run.
+    Each config has its own cache keyed by config_id.
     """
-    _build_checkpoint_from_config(config_filenames[0], config_dir)
+    for config_filename in config_filenames:
+        _build_config_cache(config_filename, config_dir)
 
 
 def run_all_configs(

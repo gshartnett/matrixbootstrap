@@ -20,16 +20,12 @@ logging.basicConfig(level=logging.INFO)
 d = 3
 L = 4
 model = MiniBMN(couplings={"nu": 1, "lambda": 1})
-checkpoint_path = f"checkpoints/MiniBMN_L_{L}_symmetric"
-
 bootstrap = BootstrapSystem(
     matrix_system=model.matrix_system,
     hamiltonian=model.hamiltonian,
     gauge_generator=model.gauge_generator,
     max_degree_L=L,
     symmetry_generators=model.symmetry_generators,
-    checkpoint_path=checkpoint_path,
-    verbose=True,
 )
 
 # build the symmetries

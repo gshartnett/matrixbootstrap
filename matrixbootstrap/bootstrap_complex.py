@@ -46,7 +46,8 @@ class BootstrapSystemComplex:
         tol: float = 1e-10,
         odd_degree_vanish=True,
         simplify_quadratic=True,
-        checkpoint_path: Optional[str] = None,
+        structural_cache_path: Optional[str] = None,
+        config_cache_path: Optional[str] = None,
         verbose: bool = False,
         fraction_operators_to_retain: float = 1,
     ):
@@ -72,10 +73,12 @@ class BootstrapSystemComplex:
         self.bootstrap_table_sparse = None
         self.simplify_quadratic = simplify_quadratic
         self.symmetry_generators = symmetry_generators
-        if checkpoint_path is not None:
-            if not os.path.exists(checkpoint_path):
-                os.makedirs(checkpoint_path)
-        self.checkpoint_path = checkpoint_path
+        self.structural_cache_path = structural_cache_path
+        self.config_cache_path = config_cache_path
+        if self.structural_cache_path is not None:
+            os.makedirs(self.structural_cache_path, exist_ok=True)
+        if self.config_cache_path is not None:
+            os.makedirs(self.config_cache_path, exist_ok=True)
         self.verbose = verbose
         self._validate()
 
@@ -101,22 +104,10 @@ class BootstrapSystemComplex:
                         f"Invalid operator: constrains term {op_str} which is not in operator_basis."
                     )
 
-    def load_constraints(self, path):
+    def load_structural_cache(self, path):
+        """Load coupling-independent artifacts from the structural cache."""
         if not os.path.exists(path):
-            raise ValueError(f"Error, save path {path} does not exist.")
-
-        logger.info(f"Attempting to load from checkpoints, checkpoint_dir={path}")
-
-        # load the linear constraints
-        if os.path.exists(path + "/linear_constraints_data.pkl"):
-            with open(path + "/linear_constraints_data.pkl", "rb") as f:
-                loaded_data = pickle.load(f)
-            self.linear_constraints = [
-                SingleTraceOperator(data=data) for data in loaded_data
-            ]
-            logger.info("  loaded previously computed linear constraints")
-
-        # load the cyclic quadratic constraints
+            return
         if os.path.exists(path + "/cyclic_quadratic.pkl"):
             with open(path + "/cyclic_quadratic.pkl", "rb") as f:
                 loaded_data = pickle.load(f)
@@ -127,15 +118,27 @@ class BootstrapSystemComplex:
                 }
                 for key, value in loaded_data.items()
             }
-            logger.info("  loaded previously computed cyclic constraints")
+            logger.info("Loaded cyclic constraints from structural cache: %s", path)
 
-        # load the null space matrix
+    def load_config_cache(self, path):
+        """Load coupling-dependent artifacts from the per-config cache."""
+        if not os.path.exists(path):
+            return
+        logger.info("Loading config cache: %s", path)
+
+        if os.path.exists(path + "/linear_constraints_data.pkl"):
+            with open(path + "/linear_constraints_data.pkl", "rb") as f:
+                loaded_data = pickle.load(f)
+            self.linear_constraints = [
+                SingleTraceOperator(data=data) for data in loaded_data
+            ]
+            logger.info("  loaded linear constraints")
+
         if os.path.exists(path + "/null_space_matrix.npz"):
-            self.null_space_matrix = load_npz(path + "/null_space_matrix.npz")
+            self.null_space_matrix = load_npz(path + "/null_space_matrix.npz").copy()
             self.param_dim_null = self.null_space_matrix.shape[1]
-            logger.info("  loaded previously computed null space matrix")
+            logger.info("  loaded null space matrix")
 
-        # load the quadratic (numerical) constraints
         if os.path.exists(
             path + "/quadratic_constraints_numerical_linear_term.npz"
         ) and os.path.exists(
@@ -144,19 +147,18 @@ class BootstrapSystemComplex:
             quadratic_constraints_numerical = {}
             quadratic_constraints_numerical["linear"] = load_npz(
                 path + "/quadratic_constraints_numerical_linear_term.npz"
-            )
+            ).copy()
             quadratic_constraints_numerical["quadratic"] = load_npz(
                 path + "/quadratic_constraints_numerical_quadratic_term.npz"
-            )
+            ).copy()
             self.quadratic_constraints_numerical = quadratic_constraints_numerical
-            logger.info(
-                "  loaded previously computed quadratic constraints (numerical)"
-            )
+            logger.info("  loaded quadratic constraints (numerical)")
 
-        # load the bootstrap table
         if os.path.exists(path + "/bootstrap_table_sparse.npz"):
-            self.bootstrap_table_sparse = load_npz(path + "/bootstrap_table_sparse.npz")
-            logger.info("  loaded previously computed bootstrap table")
+            self.bootstrap_table_sparse = load_npz(
+                path + "/bootstrap_table_sparse.npz"
+            ).copy()
+            logger.info("  loaded bootstrap table")
 
     def scale_param_to_enforce_normalization(self, param: np.ndarray) -> np.ndarray:
         """
@@ -195,9 +197,10 @@ class BootstrapSystemComplex:
             f"Null space dimension (number of parameters) = {self.param_dim_null}"
         )
 
-        if self.checkpoint_path is not None:
+        if self.config_cache_path is not None:
             save_npz(
-                self.checkpoint_path + "/null_space_matrix.npz", self.null_space_matrix
+                self.config_cache_path + "/null_space_matrix.npz",
+                self.null_space_matrix,
             )
 
     def generate_operators_truncated(self, L, fraction_operators_to_retain=1.0):
@@ -711,10 +714,13 @@ class BootstrapSystemComplex:
         # linear_constraints = self.clean_constraints(linear_constraints)
 
         # save the constraints
-        if self.checkpoint_path is not None:
-            with open(self.checkpoint_path + "/linear_constraints_data.pkl", "wb") as f:
+        if self.config_cache_path is not None:
+            with open(
+                self.config_cache_path + "/linear_constraints_data.pkl", "wb"
+            ) as f:
                 pickle.dump([constraint.data for constraint in linear_constraints], f)
-            with open(self.checkpoint_path + "/cyclic_quadratic.pkl", "wb") as f:
+        if self.structural_cache_path is not None:
+            with open(self.structural_cache_path + "/cyclic_quadratic.pkl", "wb") as f:
                 cyclic_data_dict = {}
                 for key, value in cyclic_quadratic.items():
                     cyclic_data_dict[key] = {
@@ -1029,14 +1035,14 @@ class BootstrapSystemComplex:
             f"Number of quadratic constraints after row reduction: {num_constraints}"
         )
 
-        if self.checkpoint_path is not None:
+        if self.config_cache_path is not None:
             save_npz(
-                self.checkpoint_path
+                self.config_cache_path
                 + "/quadratic_constraints_numerical_linear_term.npz",
                 linear_terms,
             )
             save_npz(
-                self.checkpoint_path
+                self.config_cache_path
                 + "/quadratic_constraints_numerical_quadratic_term.npz",
                 quadratic_terms,
             )
@@ -1217,9 +1223,9 @@ class BootstrapSystemComplex:
             )
         )
 
-        if self.checkpoint_path is not None:
+        if self.config_cache_path is not None:
             save_npz(
-                self.checkpoint_path + "/bootstrap_table_sparse.npz",
+                self.config_cache_path + "/bootstrap_table_sparse.npz",
                 self.bootstrap_table_sparse,
             )
 
