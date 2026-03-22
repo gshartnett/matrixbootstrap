@@ -31,4 +31,4 @@ generate_config_one_matrix(
 run_all_configs(
     config_dir=f"OneMatrix_L_{L}_test", parallel=False, check_if_exists_already=False
 )
-print(f"Brezin energy = {compute_Brezin_energy(g=g4/4)}")
+print(f"Brezin energy = {compute_Brezin_energy(g_value=g4/4)}")
