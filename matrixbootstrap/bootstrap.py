@@ -458,6 +458,7 @@ class BootstrapSystem:
                 constraints = self.clean_constraints(constraints)
 
                 # save them
+                os.makedirs(os.path.dirname(constraint_filepath), exist_ok=True)
                 with open(constraint_filepath, "wb") as f:
                     pickle.dump(constraints, f)
 
@@ -465,6 +466,7 @@ class BootstrapSystem:
                 total_constraints.extend(constraints)
 
             # save them
+            os.makedirs(os.path.dirname(total_constraints_filepath), exist_ok=True)
             with open(total_constraints_filepath, "wb") as f:
                 pickle.dump(total_constraints, f)
 
