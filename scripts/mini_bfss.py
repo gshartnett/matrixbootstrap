@@ -1,5 +1,9 @@
 import numpy as np
-from matrixbootstrap.config_utils import generate_configs_bfss, run_all_configs
+
+from matrixbootstrap.config_utils import (
+    generate_configs_bfss,
+    run_all_configs,
+)
 
 ## energy held fixed
 L = 4
@@ -7,7 +11,7 @@ checkpoint_path = f"MiniBFSS_L_{L}_symmetric"
 
 config_dir = f"MiniBFSS_L_{L}_symmetric"
 
-#for st_operator_to_minimize in ["x_2", "neg_x_2", "x_4", "neg_x_4"]:
+# for st_operator_to_minimize in ["x_2", "neg_x_2", "x_4", "neg_x_4"]:
 #    for energy in np.linspace(0.4, 3.0, 40):
 
 energy = 1
@@ -24,10 +28,12 @@ generate_configs_bfss(
     checkpoint_path=checkpoint_path,
     impose_symmetries=True,
     optimization_method="newton",
-    #optimization_method="pytorch",
-    #lr=1e0,
-    #init_scale=1e-2,
-    )
+    # optimization_method="pytorch",
+    # lr=1e0,
+    # init_scale=1e-2,
+)
 
 # execute
-run_all_configs(config_dir=config_dir, parallel=True, max_workers=3, check_if_exists_already=False)
+run_all_configs(
+    config_dir=config_dir, parallel=True, max_workers=3, check_if_exists_already=False
+)

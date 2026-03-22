@@ -1,8 +1,13 @@
 import numpy as np
-from matrixbootstrap.algebra import MatrixSystem, SingleTraceOperator, MatrixOperator
+
+from matrixbootstrap.algebra import (
+    MatrixOperator,
+    MatrixSystem,
+    SingleTraceOperator,
+)
 
 
-class MatrixModel():
+class MatrixModel:
     def __init__(self, couplings):
         self.couplings = couplings
         self.build_matrix_system()
@@ -33,12 +38,14 @@ class OneMatrix(MatrixModel):
             operator_basis=["X", "Pi"],
             commutation_rules_concise={
                 ("Pi", "X"): 1,  # use Pi' = i P to ensure reality
-                },
-                hermitian_dict={"Pi": False, "X": True},
-                )
+            },
+            hermitian_dict={"Pi": False, "X": True},
+        )
 
     def build_gauge_generator(self):
-        self.gauge_generator = MatrixOperator(data={("X", "Pi"): 1, ("Pi", "X"): -1, (): 1})
+        self.gauge_generator = MatrixOperator(
+            data={("X", "Pi"): 1, ("Pi", "X"): -1, (): 1}
+        )
 
     def build_hamiltonian(self):
         self.hamiltonian = SingleTraceOperator(
@@ -47,7 +54,8 @@ class OneMatrix(MatrixModel):
                 ("X", "X"): 0.5 * self.couplings["g2"],
                 ("X", "X", "X", "X"): self.couplings["g4"] / 4,
                 ("X", "X", "X", "X", "X", "X"): self.couplings["g6"] / 6,
-                })
+            }
+        )
 
     def build_operators_to_track(self):
         self.operators_to_track = {
@@ -71,9 +79,9 @@ class TwoMatrix(MatrixModel):
             commutation_rules_concise={
                 ("Pi0", "X0"): 1,
                 ("Pi1", "X1"): 1,
-                },
-                hermitian_dict={"Pi0": False, "X0": True, "Pi1": False, "X1": True},
-                )
+            },
+            hermitian_dict={"Pi0": False, "X0": True, "Pi1": False, "X1": True},
+        )
 
     def build_gauge_generator(self):
         self.gauge_generator = MatrixOperator(
@@ -83,8 +91,8 @@ class TwoMatrix(MatrixModel):
                 ("X1", "Pi1"): 1,
                 ("Pi1", "X1"): -1,
                 (): 2,
-                }
-                )
+            }
+        )
 
     def build_hamiltonian(self):
         self.hamiltonian = SingleTraceOperator(
@@ -97,8 +105,8 @@ class TwoMatrix(MatrixModel):
                 ("X1", "X0", "X1", "X0"): -self.couplings["g4"] / 4,
                 ("X0", "X1", "X1", "X0"): self.couplings["g4"] / 4,
                 ("X1", "X0", "X0", "X1"): self.couplings["g4"] / 4,
-                }
-                )
+            }
+        )
 
     def build_operators_to_track(self):
         self.operators_to_track = {
@@ -106,29 +114,43 @@ class TwoMatrix(MatrixModel):
             "energy": self.hamiltonian,
             "x_2": SingleTraceOperator(data={("X0", "X0"): 1, ("X1", "X1"): 1}),
             "neg_x_2": -SingleTraceOperator(data={("X0", "X0"): 1, ("X1", "X1"): 1}),
-            "x_4": SingleTraceOperator(data={("X0", "X0", "X0", "X0"): 1, ("X1", "X1", "X1", "X1"): 1}),
-            "neg_x_4": -SingleTraceOperator(data={("X0", "X0", "X0", "X0"): 1, ("X1", "X1", "X1", "X1"): 1}),
+            "x_4": SingleTraceOperator(
+                data={("X0", "X0", "X0", "X0"): 1, ("X1", "X1", "X1", "X1"): 1}
+            ),
+            "neg_x_4": -SingleTraceOperator(
+                data={("X0", "X0", "X0", "X0"): 1, ("X1", "X1", "X1", "X1"): 1}
+            ),
             "XYXY": SingleTraceOperator(data={("X0", "X1", "X0", "X1"): 1}),
             "p_2": SingleTraceOperator(data={("Pi0", "Pi0"): -1, ("Pi1", "Pi1"): -1}),
-            "p_4": SingleTraceOperator(data={("Pi0", "Pi0", "Pi0", "Pi0"): 1, ("Pi1", "Pi1", "Pi1", "Pi1"): 1}),
-            "neg_commutator_squared": SingleTraceOperator(data={
-                ("X0", "X1", "X0", "X1"): -1,
-                ("X1", "X0", "X1", "X0"): -1,
-                ("X0", "X1", "X1", "X0"): 1,
-                ("X1", "X0", "X0", "X1"): 1,}),
-            "lagrangian": SingleTraceOperator(data={
-                ("Pi0", "Pi0"): -1 / 2,
-                ("Pi1", "Pi1"): -1 / 2,
-                ("X0", "X0"): -self.couplings["g2"] / 2,
-                ("X1", "X1"): -self.couplings["g2"] / 2,
-                ("X0", "X1", "X0", "X1"): self.couplings["g4"] / 4,
-                ("X1", "X0", "X1", "X0"): self.couplings["g4"] / 4,
-                ("X0", "X1", "X1", "X0"): -self.couplings["g4"] / 4,
-                ("X1", "X0", "X0", "X1"): -self.couplings["g4"] / 4,})
+            "p_4": SingleTraceOperator(
+                data={("Pi0", "Pi0", "Pi0", "Pi0"): 1, ("Pi1", "Pi1", "Pi1", "Pi1"): 1}
+            ),
+            "neg_commutator_squared": SingleTraceOperator(
+                data={
+                    ("X0", "X1", "X0", "X1"): -1,
+                    ("X1", "X0", "X1", "X0"): -1,
+                    ("X0", "X1", "X1", "X0"): 1,
+                    ("X1", "X0", "X0", "X1"): 1,
                 }
+            ),
+            "lagrangian": SingleTraceOperator(
+                data={
+                    ("Pi0", "Pi0"): -1 / 2,
+                    ("Pi1", "Pi1"): -1 / 2,
+                    ("X0", "X0"): -self.couplings["g2"] / 2,
+                    ("X1", "X1"): -self.couplings["g2"] / 2,
+                    ("X0", "X1", "X0", "X1"): self.couplings["g4"] / 4,
+                    ("X1", "X0", "X1", "X0"): self.couplings["g4"] / 4,
+                    ("X0", "X1", "X1", "X0"): -self.couplings["g4"] / 4,
+                    ("X1", "X0", "X0", "X1"): -self.couplings["g4"] / 4,
+                }
+            ),
+        }
 
     def build_symmetry_generators(self):
-        self.symmetry_generators = [SingleTraceOperator(data={("X0", "Pi1"): 1, ("X1", "Pi0"): -1})]
+        self.symmetry_generators = [
+            SingleTraceOperator(data={("X0", "Pi1"): 1, ("X1", "Pi0"): -1})
+        ]
 
 
 class ThreeMatrix(MatrixModel):
@@ -143,9 +165,16 @@ class ThreeMatrix(MatrixModel):
                 ("Pi0", "X0"): 1,
                 ("Pi1", "X1"): 1,
                 ("Pi2", "X2"): 1,
-                },
-                hermitian_dict={"Pi0": False, "X0": True, "Pi1": False, "X1": True, "Pi2": False, "X2": True},
-                )
+            },
+            hermitian_dict={
+                "Pi0": False,
+                "X0": True,
+                "Pi1": False,
+                "X1": True,
+                "Pi2": False,
+                "X2": True,
+            },
+        )
 
     def build_gauge_generator(self):
         self.gauge_generator = MatrixOperator(
@@ -157,8 +186,8 @@ class ThreeMatrix(MatrixModel):
                 ("X2", "Pi2"): 1,
                 ("Pi2", "X2"): -1,
                 (): 3,
-                }
-                )
+            }
+        )
 
     def build_hamiltonian(self):
         self.hamiltonian = SingleTraceOperator(
@@ -192,47 +221,72 @@ class ThreeMatrix(MatrixModel):
                 ("X2", "X1", "X2", "X1"): -self.couplings["g4"] / 4,
                 ("X1", "X2", "X2", "X1"): self.couplings["g4"] / 4,
                 ("X2", "X1", "X1", "X2"): self.couplings["g4"] / 4,
-                }
-                )
+            }
+        )
 
     def build_operators_to_track(self):
         self.operators_to_track = {
             "tr(1)": SingleTraceOperator(data={(): 1}),
             "energy": self.hamiltonian,
-            "x_2": SingleTraceOperator(data={("X0", "X0"): 1, ("X1", "X1"): 1, ("X2", "X2"): 1}),
-            "neg_x_2": -SingleTraceOperator(data={("X0", "X0"): 1, ("X1", "X1"): 1, ("X2", "X2"): 1}),
-            "x_4": SingleTraceOperator(data={("X0", "X0", "X0", "X0"): 1, ("X1", "X1", "X1", "X1"): 1, ("X2", "X2", "X2", "X2"): 1}),
-            "neg_x_4": -SingleTraceOperator(data={("X0", "X0", "X0", "X0"): 1, ("X1", "X1", "X1", "X1"): 1, ("X2", "X2", "X2", "X2"): 1}),
-            "p_2": SingleTraceOperator(data={("Pi0", "Pi0"): -1, ("Pi1", "Pi1"): -1, ("Pi2", "Pi2"): -1}),
-            "p_4": SingleTraceOperator(data={("Pi0", "Pi0", "Pi0", "Pi0"): 1, ("Pi1", "Pi1", "Pi1", "Pi1"): 1, ("Pi2", "Pi2", "Pi2", "Pi2"): 1}),
-            "neg_commutator_squared": SingleTraceOperator(data={
-                # quartic term (XY)
-                ("X0", "X1", "X0", "X1"): -1,
-                ("X1", "X0", "X1", "X0"): -1,
-                ("X0", "X1", "X1", "X0"): 1,
-                ("X1", "X0", "X0", "X1"): 1,
-                # quartic term (XZ)
-                ("X0", "X2", "X0", "X2"): -1,
-                ("X2", "X0", "X2", "X0"): -1,
-                ("X0", "X2", "X2", "X0"): 1,
-                ("X2", "X0", "X0", "X2"): 1,
-                # quartic term (YZ)
-                ("X1", "X2", "X1", "X2"): -1,
-                ("X2", "X1", "X2", "X1"): -1,
-                ("X1", "X2", "X2", "X1"): 1,
-                ("X2", "X1", "X1", "X2"): 1,
+            "x_2": SingleTraceOperator(
+                data={("X0", "X0"): 1, ("X1", "X1"): 1, ("X2", "X2"): 1}
+            ),
+            "neg_x_2": -SingleTraceOperator(
+                data={("X0", "X0"): 1, ("X1", "X1"): 1, ("X2", "X2"): 1}
+            ),
+            "x_4": SingleTraceOperator(
+                data={
+                    ("X0", "X0", "X0", "X0"): 1,
+                    ("X1", "X1", "X1", "X1"): 1,
+                    ("X2", "X2", "X2", "X2"): 1,
+                }
+            ),
+            "neg_x_4": -SingleTraceOperator(
+                data={
+                    ("X0", "X0", "X0", "X0"): 1,
+                    ("X1", "X1", "X1", "X1"): 1,
+                    ("X2", "X2", "X2", "X2"): 1,
+                }
+            ),
+            "p_2": SingleTraceOperator(
+                data={("Pi0", "Pi0"): -1, ("Pi1", "Pi1"): -1, ("Pi2", "Pi2"): -1}
+            ),
+            "p_4": SingleTraceOperator(
+                data={
+                    ("Pi0", "Pi0", "Pi0", "Pi0"): 1,
+                    ("Pi1", "Pi1", "Pi1", "Pi1"): 1,
+                    ("Pi2", "Pi2", "Pi2", "Pi2"): 1,
+                }
+            ),
+            "neg_commutator_squared": SingleTraceOperator(
+                data={
+                    # quartic term (XY)
+                    ("X0", "X1", "X0", "X1"): -1,
+                    ("X1", "X0", "X1", "X0"): -1,
+                    ("X0", "X1", "X1", "X0"): 1,
+                    ("X1", "X0", "X0", "X1"): 1,
+                    # quartic term (XZ)
+                    ("X0", "X2", "X0", "X2"): -1,
+                    ("X2", "X0", "X2", "X0"): -1,
+                    ("X0", "X2", "X2", "X0"): 1,
+                    ("X2", "X0", "X0", "X2"): 1,
+                    # quartic term (YZ)
+                    ("X1", "X2", "X1", "X2"): -1,
+                    ("X2", "X1", "X2", "X1"): -1,
+                    ("X1", "X2", "X2", "X1"): 1,
+                    ("X2", "X1", "X1", "X2"): 1,
                 }
             ),
             "x1x2x3": SingleTraceOperator(data={("X0", "X1", "X2"): 1}),
-            "p1p2p3": SingleTraceOperator(data={("Pi0", "Pi1", "Pi2"): 1j**3})
-            }
+            "p1p2p3": SingleTraceOperator(data={("Pi0", "Pi1", "Pi2"): 1j**3}),
+        }
 
     def build_symmetry_generators(self):
         self.symmetry_generators = [
             SingleTraceOperator(data={("X1", "Pi2"): 1, ("X2", "Pi1"): -1}),
             SingleTraceOperator(data={("X0", "Pi2"): 1, ("X2", "Pi0"): -1}),
             SingleTraceOperator(data={("X0", "Pi1"): 1, ("X1", "Pi0"): -1}),
-            ]
+        ]
 
 
 class MiniBFSS(ThreeMatrix):

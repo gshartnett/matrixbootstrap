@@ -1,13 +1,11 @@
+import logging
 import os
 import pickle
-from collections import Counter
 from itertools import product
-from typing import (
-    Optional,
-    Union,
-)
+from typing import Optional
 
 import numpy as np
+import psutil
 from scipy.sparse import (
     bmat,
     coo_matrix,
@@ -24,16 +22,13 @@ from matrixbootstrap.algebra import (
     MatrixSystem,
     SingleTraceOperator,
 )
-import logging
-
-logger = logging.getLogger(__name__)
 from matrixbootstrap.linear_algebra import (
     create_sparse_matrix_from_dict,
     get_null_space_sparse,
-    get_real_coefficients_from_dict,
     get_row_space_sparse,
 )
-import psutil
+
+logger = logging.getLogger(__name__)
 
 
 class BootstrapSystemComplex:
@@ -99,7 +94,7 @@ class BootstrapSystemComplex:
         """
         for op, coeff in operator:
             for op_str in op:
-                if not (op_str in self.matrix_system.operator_basis):
+                if op_str not in self.matrix_system.operator_basis:
                     raise ValueError(
                         f"Invalid operator: constrains term {op_str} which is not in operator_basis."
                     )
@@ -139,10 +134,18 @@ class BootstrapSystemComplex:
             print("  loaded previously computed null space matrix")
 
         # load the quadratic (numerical) constraints
-        if os.path.exists(path + "/quadratic_constraints_numerical_linear_term.npz") and os.path.exists(path + "/quadratic_constraints_numerical_quadratic_term.npz"):
+        if os.path.exists(
+            path + "/quadratic_constraints_numerical_linear_term.npz"
+        ) and os.path.exists(
+            path + "/quadratic_constraints_numerical_quadratic_term.npz"
+        ):
             quadratic_constraints_numerical = {}
-            quadratic_constraints_numerical["linear"] = load_npz(path + "/quadratic_constraints_numerical_linear_term.npz")
-            quadratic_constraints_numerical["quadratic"] = load_npz(path + "/quadratic_constraints_numerical_quadratic_term.npz")
+            quadratic_constraints_numerical["linear"] = load_npz(
+                path + "/quadratic_constraints_numerical_linear_term.npz"
+            )
+            quadratic_constraints_numerical["quadratic"] = load_npz(
+                path + "/quadratic_constraints_numerical_quadratic_term.npz"
+            )
             self.quadratic_constraints_numerical = quadratic_constraints_numerical
             print("  loaded previously computed quadratic constraints (numerical)")
 
@@ -187,7 +190,9 @@ class BootstrapSystemComplex:
         print(f"Null space dimension (number of parameters) = {self.param_dim_null}")
 
         if self.checkpoint_path is not None:
-            save_npz(self.checkpoint_path + "/null_space_matrix.npz", self.null_space_matrix)
+            save_npz(
+                self.checkpoint_path + "/null_space_matrix.npz", self.null_space_matrix
+            )
 
     def generate_operators_truncated(self, L, fraction_operators_to_retain=1.0):
 
@@ -260,7 +265,8 @@ class BootstrapSystemComplex:
         #   1: [('X'), ('P'), ..., ]
         # }
         operators_by_degree = {}
-        degree_func = lambda x: len(x)
+        def degree_func(x):
+            return len(x)
         for op in operator_list:
             degree = degree_func(op)
             if degree not in operators_by_degree:
@@ -321,7 +327,10 @@ class BootstrapSystemComplex:
         #   1: [('X'), ('P'), ..., ]
         # }
         operators_by_degree = {}
-        degree_func = lambda x: len(x)
+
+        def degree_func(x):
+            return len(x)
+
         for op in operator_list:
             degree = degree_func(op)
             if degree not in operators_by_degree:
@@ -562,7 +571,9 @@ class BootstrapSystemComplex:
         """
         constraints = []
         for op_idx, op in enumerate(self.operator_list):
-            constraints.append((self.gauge_generator * MatrixOperator(data={op: 1})).trace())
+            constraints.append(
+                (self.gauge_generator * MatrixOperator(data={op: 1})).trace()
+            )
 
             if self.verbose:
                 logger.debug(
@@ -755,7 +766,7 @@ class BootstrapSystemComplex:
             The set of linear constraints.
         """
         if self.verbose:
-            logger.debug(f"Building the linear constraint matrix")
+            logger.debug("Building the linear constraint matrix")
 
         # grab the constraints, building them if necessary
         if self.linear_constraints is None:
@@ -886,7 +897,9 @@ class BootstrapSystemComplex:
                 logger.debug(
                     f"Generating quadratic constraints, operator {constraint_idx+1}/{len(quadratic_constraints)}"
                 )
-            logger.debug(f"Memory usage: {psutil.Process().memory_info().rss / 1024 ** 2}")
+            logger.debug(
+                f"Memory usage: {psutil.Process().memory_info().rss / 1024 ** 2}"
+            )
 
             lhs = constraint["lhs"]
             rhs = constraint["rhs"]
@@ -919,12 +932,12 @@ class BootstrapSystemComplex:
             QR = bmat([[qR, -qI], [-qI, -qR]], format="coo")
             QI = bmat([[qI, qR], [qR, -qI]], format="coo")
 
-            #debug(f"  type(linear_constraint_vector) = {type(linear_constraint_vector)}")
-            #debug(f"  type(quadratic_matrix) = {type(quadratic_matrix)}")
-            #debug(f"  type(linear_constraint_vectorR) = {type(linear_constraint_vectorR)}")
-            #debug(f"  type(linear_constraint_vectorI) = {type(linear_constraint_vectorI)}")
-            #debug(f"  type(QR) = {type(QR)}")
-            #debug(f"  type(linear_constraint_vectorR) = {type(linear_constraint_vectorR)}")
+            # debug(f"  type(linear_constraint_vector) = {type(linear_constraint_vector)}")
+            # debug(f"  type(quadratic_matrix) = {type(quadratic_matrix)}")
+            # debug(f"  type(linear_constraint_vectorR) = {type(linear_constraint_vectorR)}")
+            # debug(f"  type(linear_constraint_vectorI) = {type(linear_constraint_vectorI)}")
+            # debug(f"  type(QR) = {type(QR)}")
+            # debug(f"  type(linear_constraint_vectorR) = {type(linear_constraint_vectorR)}")
 
             # transform to null basis
             # the minus sign is important: (-RHS + LHS = 0)
@@ -937,7 +950,7 @@ class BootstrapSystemComplex:
             # reshape the (d, d) matrices to (1, d^2) matrices
             QR = QR.reshape((1, self.param_dim_null**2))
             QI = QI.reshape((1, self.param_dim_null**2))
-            #debug(f"  type(QR) = {type(QR)}")
+            # debug(f"  type(QR) = {type(QR)}")
 
             print(f"lhs = {lhs}")
             print(f"rhs = {rhs}")
@@ -958,7 +971,9 @@ class BootstrapSystemComplex:
                 if not quadratic_is_zero or not linear_is_zero:
                     linear_terms.append(csr_matrix(linear_constraint_vectorR))
                     quadratic_terms.append(QR)
-                    logger.debug(f"Real CCCC, quadratic_is_zero={linear_is_zero}, quadratic_is_zero={linear_is_zero}")
+                    logger.debug(
+                        f"Real CCCC, quadratic_is_zero={linear_is_zero}, quadratic_is_zero={linear_is_zero}"
+                    )
 
             # imaginary part
             linear_is_zero = np.max(np.abs(linear_constraint_vectorI)) < self.tol
@@ -975,10 +990,12 @@ class BootstrapSystemComplex:
                 if not quadratic_is_zero or not linear_is_zero:
                     linear_terms.append(csr_matrix(linear_constraint_vectorI))
                     quadratic_terms.append(QI)
-                    logger.debug(f"Imag CCCC, quadratic_is_zero={linear_is_zero}, quadratic_is_zero={linear_is_zero}")
+                    logger.debug(
+                        f"Imag CCCC, quadratic_is_zero={linear_is_zero}, quadratic_is_zero={linear_is_zero}"
+                    )
 
             if constraint_idx > 100:
-                assert 1==0
+                assert 1 == 0
 
         print(f"len(quadratic_terms) = {len(quadratic_terms)}")
         if len(quadratic_terms) == 0:
@@ -1011,13 +1028,21 @@ class BootstrapSystemComplex:
         print(f"Number of quadratic constraints after row reduction: {num_constraints}")
 
         if self.checkpoint_path is not None:
-            save_npz(self.checkpoint_path + "/quadratic_constraints_numerical_linear_term.npz", linear_terms)
-            save_npz(self.checkpoint_path + "/quadratic_constraints_numerical_quadratic_term.npz", quadratic_terms)
+            save_npz(
+                self.checkpoint_path
+                + "/quadratic_constraints_numerical_linear_term.npz",
+                linear_terms,
+            )
+            save_npz(
+                self.checkpoint_path
+                + "/quadratic_constraints_numerical_quadratic_term.npz",
+                quadratic_terms,
+            )
 
         self.quadratic_constraints_numerical = {
             "linear": linear_terms,
             "quadratic": quadratic_terms.tocsr(),
-            }
+        }
 
     def clean_constraints(
         self, constraints: list[SingleTraceOperator]
@@ -1191,7 +1216,10 @@ class BootstrapSystemComplex:
         )
 
         if self.checkpoint_path is not None:
-            save_npz(self.checkpoint_path + "/bootstrap_table_sparse.npz", self.bootstrap_table_sparse)
+            save_npz(
+                self.checkpoint_path + "/bootstrap_table_sparse.npz",
+                self.bootstrap_table_sparse,
+            )
 
     def get_bootstrap_matrix(self, param: np.ndarray):
         dim = self.bootstrap_matrix_dim
@@ -1199,7 +1227,9 @@ class BootstrapSystemComplex:
         if self.bootstrap_table_sparse is None:
             self.buid_bootstrap_table()
 
-        bootstrap_matrix = np.reshape(self.bootstrap_table_sparse.dot(param), (dim, dim))
+        bootstrap_matrix = np.reshape(
+            self.bootstrap_table_sparse.dot(param), (dim, dim)
+        )
 
         # verify that matrix is symmetric
         # the general condition is that the matrix is Hermitian, but we have made it real
