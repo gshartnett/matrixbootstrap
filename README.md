@@ -76,27 +76,6 @@ poetry install
 
 This installs `matrixbootstrap` and all dependencies (numpy, scipy, cvxpy, torch, sparseqr, etc.) into the active environment.
 
-### Troubleshooting: sparseqr on macOS 15 (Sequoia)
-
-On macOS 15, importing `sparseqr` may crash the Python process with `exit code 137` (SIGKILL) if the conda-bundled `libgfortran` or `libquadmath` libraries were modified by `install_name_tool` without subsequent re-signing. macOS 15 enforces code signature validity and kills any process loading a tampered library.
-
-**Symptom**: `import sparseqr` causes a silent SIGKILL with no traceback.
-
-**Diagnosis**: check whether the libraries have valid signatures:
-```bash
-codesign -v $CONDA_PREFIX/lib/libgfortran.5.dylib
-codesign -v $CONDA_PREFIX/lib/libquadmath.0.dylib
-# "invalid signature" means the library has been tampered with
-```
-
-**Fix**: re-sign the affected libraries with an ad-hoc signature:
-```bash
-codesign --force -s - $CONDA_PREFIX/lib/libgfortran.5.dylib
-codesign --force -s - $CONDA_PREFIX/lib/libquadmath.0.dylib
-```
-
-After re-signing, `import sparseqr` should succeed.
-
 ## Usage
 
 ### Quickstart: one-matrix model
@@ -199,5 +178,3 @@ pytest tests/ -v
 ## References
 
 - Han, Hartnoll, Kruthoff, [*Bootstrapping Matrix Quantum Mechanics*](https://arxiv.org/abs/2004.01981), PRL 2020
-- Brezin, Itzykson, Parisi, Zuber, [*Planar diagrams*](https://link.springer.com/article/10.1007/BF01208266), Commun. Math. Phys. 59 (1978)
-- Lin, [*Bootstrapping the Minimal BFSS*](https://arxiv.org/abs/2310.01703), 2023
