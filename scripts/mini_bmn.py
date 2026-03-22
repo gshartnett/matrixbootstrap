@@ -1,9 +1,13 @@
+import logging
+
 import numpy as np
 
 from matrixbootstrap.config_utils import (
-    generate_configs_bmn,
+    generate_config_bmn,
     run_all_configs,
 )
+
+logging.basicConfig(level=logging.INFO)
 
 # generate the config files
 L = 3
@@ -20,7 +24,7 @@ for st_operator_to_minimize in ["x_2", "x_4", "neg_x_2", "neg_commutator_squared
             config_dir = f"MiniBMN_L_{L}_symmetric"
             config_filename = f"energy_{energy}_st_operator_to_minimize_{st_operator_to_minimize}_nu_{nu}_lambd_{lambd}"
 
-            generate_configs_bmn(
+            generate_config_bmn(
                 config_filename=config_filename,
                 config_dir=config_dir,
                 nu=nu,
@@ -42,6 +46,10 @@ for st_operator_to_minimize in ["x_2", "x_4", "neg_x_2", "neg_commutator_squared
             )
 
 # execute
-run_all_configs(
-    config_dir=config_dir, parallel=True, max_workers=6, check_if_exists_already=False
-)
+if __name__ == "__main__":
+    run_all_configs(
+        config_dir=config_dir,
+        parallel=True,
+        max_workers=6,
+        check_if_exists_already=False,
+    )

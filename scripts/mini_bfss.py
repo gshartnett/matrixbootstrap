@@ -1,9 +1,13 @@
+import logging
+
 import numpy as np
 
 from matrixbootstrap.config_utils import (
-    generate_configs_bfss,
+    generate_config_bfss,
     run_all_configs,
 )
+
+logging.basicConfig(level=logging.INFO)
 
 ## energy held fixed
 L = 4
@@ -18,7 +22,7 @@ energy = 1
 st_operator_to_minimize = "x_2"
 
 energy = float(np.round(energy, decimals=6))
-generate_configs_bfss(
+generate_config_bfss(
     config_filename=f"energy_{str(energy)}_op_to_min_{st_operator_to_minimize}",
     config_dir=config_dir,
     st_operator_to_minimize=st_operator_to_minimize,
@@ -34,6 +38,10 @@ generate_configs_bfss(
 )
 
 # execute
-run_all_configs(
-    config_dir=config_dir, parallel=True, max_workers=3, check_if_exists_already=False
-)
+if __name__ == "__main__":
+    run_all_configs(
+        config_dir=config_dir,
+        parallel=True,
+        max_workers=3,
+        check_if_exists_already=False,
+    )

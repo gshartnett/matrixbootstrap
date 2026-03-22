@@ -1,12 +1,16 @@
+import logging
+
 from matrixbootstrap.config_utils import (
-    generate_configs_one_matrix,
+    generate_config_one_matrix,
     run_all_configs,
 )
+
+logging.basicConfig(level=logging.INFO)
 
 L = 3
 dir = f"OneMatrix_L_{L}_play"
 
-generate_configs_one_matrix(
+generate_config_one_matrix(
     config_filename="test",
     config_dir=dir,
     checkpoint_dir=dir,
@@ -20,4 +24,5 @@ generate_configs_one_matrix(
 )
 
 # execute
-run_all_configs(config_dir=dir, parallel=False)
+if __name__ == "__main__":
+    run_all_configs(config_dir=dir, parallel=False)
