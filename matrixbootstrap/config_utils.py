@@ -426,7 +426,6 @@ def run_bootstrap_from_config(config_filename, config_dir, verbose=True, check_i
         simplify_quadratic=config_bootstrap["simplify_quadratic"],
         symmetry_generators=model.symmetry_generators,
         #impose_gauge_symmetry=config_bootstrap["impose_gauge_symmetry"],
-        verbose=verbose,
         checkpoint_path=checkpoint_path,
     )
 
