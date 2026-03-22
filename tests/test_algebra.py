@@ -19,9 +19,9 @@ def test_instantiate_single_trace_operator():
 def test_single_trace_commutator_onematrix():
     """
     Test the Hamiltonian constraint <[H,O]> = 0 for the case
-    of O = tr(XP) and H given  by the single-matrix QM model
+    of O = tr(XP) and H given by the single-matrix QM model
     studied in https://journals.aps.org/prl/abstract/10.1103/PhysRevLett.125.041601.
-    This is used to derive the constraint Eq. (8)
+    This is used to derive the constraint Eq. (8).
     """
     matrix_system = MatrixSystem(
         operator_basis=["X", "P"],
@@ -34,12 +34,11 @@ def test_single_trace_commutator_onematrix():
     OP2 = SingleTraceOperator(
         data={("P", "P"): 1, ("X", "X"): 1, ("X", "X", "X", "X"): 7}
     )
-    assert matrix_system.single_trace_commutator(OP1, OP2) == SingleTraceOperator(
+    expected = SingleTraceOperator(
         data={("P", "P"): 2j, ("X", "X"): -2j, ("X", "X", "X", "X"): -4 * 7j}
     )
-    assert matrix_system.single_trace_commutator2(OP1, OP2) == SingleTraceOperator(
-        data={("P", "P"): 2j, ("X", "X"): -2j, ("X", "X", "X", "X"): -4 * 7j}
-    )
+    assert matrix_system.single_trace_commutator(OP1, OP2) == expected
+    assert matrix_system.single_trace_commutator2(OP1, OP2) == expected
 
 
 def test_single_trace_commutator_twomatrix():
@@ -66,13 +65,10 @@ def test_single_trace_commutator_twomatrix():
             ("X1", "X1", "X2", "X2"): 2 * g + 2 * h,
             ("X1", "X1", "X1", "X1"): h,
             ("X2", "X2", "X2", "X2"): h,
-            # ("X1", "X1", "X2", "X2"): 2*h,
         }
     )
-
     S2 = SingleTraceOperator(data={("X1", "P2"): 1, ("X2", "P1"): -1})
-
-    commutator = SingleTraceOperator(
+    expected = SingleTraceOperator(
         data={
             ("P1", "P2"): -2j,
             ("X2", "X1"): -2j,
@@ -88,28 +84,21 @@ def test_single_trace_commutator_twomatrix():
             ("X1", "X2", "X2", "X2"): 12j,
         }
     )
-
-    assert matrix_system.single_trace_commutator(hamiltonian, S2) == commutator
-
-
-# assert matrix_system.single_trace_commutator2(S2, hamiltonian) == commutator
+    assert matrix_system.single_trace_commutator(hamiltonian, S2) == expected
 
 
 def test_zero_single_trace_operator():
     """
-    Test edge cases involving the zero operator
+    Test edge cases involving the zero operator.
     """
     zero = SingleTraceOperator(data={(): 0})
-
     assert len(zero) == 0
-
-    # 0 * <tr(O)>
     assert SingleTraceOperator(data={("P", "P"): 0}) == zero
 
 
-def test_zero_double_trace_operator():
+def test_zero_single_trace_operator_multiplication():
     """
-    Test edge cases involving the zero operator
+    Test that multiplying two zero single-trace operators yields zero.
     """
     zero = SingleTraceOperator(data={(): 0})
     assert zero * zero == zero
@@ -124,17 +113,21 @@ def test_single_trace_component_of_double_trace():
     assert (op * one).get_single_trace_component() == op
 
 
-def test_get_real_and_imag_parts():
-    st_op = SingleTraceOperator(data={"A": 1, "B": 2, "C": 3})
-    assert st_op.is_real()
+def test_single_trace_operator_is_real():
+    assert SingleTraceOperator(data={"A": 1, "B": 2, "C": 3}).is_real()
+    assert not SingleTraceOperator(data={"A": 1, "B": 2, "C": 3j}).is_real()
 
-    st_op = SingleTraceOperator(data={"A": 1, "B": 2, "C": 3j})
-    assert not st_op.is_real()
 
-    st_op = SingleTraceOperator(data={"A": 1j, "B": 2j, "C": 3j})
-    assert st_op.is_imag()
+def test_single_trace_operator_is_imag():
+    assert SingleTraceOperator(data={"A": 1j, "B": 2j, "C": 3j}).is_imag()
+    assert not SingleTraceOperator(data={"A": 1j, "B": 2j, "C": 3}).is_imag()
 
+
+def test_single_trace_operator_get_real_part():
     st_op = SingleTraceOperator(data={"A": 1j, "B": 2j, "C": 3})
-    assert not st_op.is_imag()
-    assert 1j * st_op.get_imag_part() == SingleTraceOperator(data={"A": 1j, "B": 2j})
     assert st_op.get_real_part() == SingleTraceOperator(data={"C": 3})
+
+
+def test_single_trace_operator_get_imag_part():
+    st_op = SingleTraceOperator(data={"A": 1j, "B": 2j, "C": 3})
+    assert 1j * st_op.get_imag_part() == SingleTraceOperator(data={"A": 1j, "B": 2j})
