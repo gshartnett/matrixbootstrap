@@ -1,9 +1,13 @@
+import logging
+
 import numpy as np
 
 from matrixbootstrap.config_utils import (
-    generate_configs_one_matrix,
+    generate_config_one_matrix,
     run_all_configs,
 )
+
+logging.basicConfig(level=logging.INFO)
 
 n_grid = 20
 g4_max = 16
@@ -27,7 +31,7 @@ for L in [3, 4]:
                 # only run models with bounded-by-below potentials
                 if (g6 > 0) or (g6 == 0 and g4 > 0):
 
-                    generate_configs_one_matrix(
+                    generate_config_one_matrix(
                         config_filename=f"g2_{str(g2)}_g4_{str(g4)}_g6_{str(g6)}",
                         config_dir=f"OneMatrix_L_{L}",
                         g2=g2,
@@ -41,4 +45,5 @@ for L in [3, 4]:
                     )
 
     # execute
-    run_all_configs(config_dir=f"OneMatrix_L_{L}", parallel=True)
+    if __name__ == "__main__":
+        run_all_configs(config_dir=f"OneMatrix_L_{L}", parallel=True)

@@ -7,11 +7,15 @@ Kearsley, Elliot A., and Jeffrey T. Fong. "Linearly independent sets of isotropi
 J. Res. Natl. Bur. Stand., Sect. B 79 (1975): 49.
 """
 
+import logging
+
 from sparseqr import qr
 
 from matrixbootstrap.bootstrap import BootstrapSystem
 from matrixbootstrap.linear_algebra import create_sparse_matrix_from_dict
 from matrixbootstrap.models import MiniBMN
+
+logging.basicConfig(level=logging.INFO)
 
 d = 3
 L = 4
