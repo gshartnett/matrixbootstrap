@@ -1,7 +1,7 @@
 import numpy as np
 
 from matrixbootstrap.config_utils import (
-    generate_configs_two_matrix,
+    generate_config_two_matrix,
     run_all_configs,
 )
 
@@ -17,7 +17,7 @@ config_dir = f"TwoMatrix_L_{L}_symmetric_energy_fixed_g2_{g2}"
 for st_operator_to_minimize in ["x_2", "neg_x_2"]:
     for energy in np.linspace(0.9, 1.4, 81):
         energy = float(np.round(energy, decimals=6))
-        generate_configs_two_matrix(
+        generate_config_two_matrix(
             config_filename=f"energy_{str(energy)}_op_to_min_{st_operator_to_minimize}",
             config_dir=config_dir,
             g2=g2,
@@ -38,6 +38,10 @@ for st_operator_to_minimize in ["x_2", "neg_x_2"]:
         )
 
 # execute
-run_all_configs(
-    config_dir=config_dir, parallel=True, max_workers=6, check_if_exists_already=True
-)
+if __name__ == "__main__":
+    run_all_configs(
+        config_dir=config_dir,
+        parallel=True,
+        max_workers=6,
+        check_if_exists_already=True,
+    )

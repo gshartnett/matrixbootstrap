@@ -6,8 +6,30 @@ import fire
 import yaml
 
 from matrixbootstrap.algebra import SingleTraceOperator
+from matrixbootstrap.bootstrap import BootstrapSystem
+from matrixbootstrap.bootstrap_complex import BootstrapSystemComplex
+from matrixbootstrap.models import (
+    MiniBFSS,
+    MiniBMN,
+    OneMatrix,
+    ThreeMatrix,
+    TwoMatrix,
+)
 from matrixbootstrap.solver_newton import solve_bootstrap as solve_bootstrap_newton
 from matrixbootstrap.solver_pytorch import solve_bootstrap as solve_bootstrap_pytorch
+
+_MODEL_CLASSES = {
+    "OneMatrix": OneMatrix,
+    "TwoMatrix": TwoMatrix,
+    "ThreeMatrix": ThreeMatrix,
+    "MiniBFSS": MiniBFSS,
+    "MiniBMN": MiniBMN,
+}
+
+_BOOTSTRAP_CLASSES = {
+    "BootstrapSystem": BootstrapSystem,
+    "BootstrapSystemComplex": BootstrapSystemComplex,
+}
 
 bootstrap_keys = [
     "max_degree_L",
@@ -405,7 +427,9 @@ def run_bootstrap_from_config(
     config_optimizer = config["optimizer"]
 
     # build the model
-    model = globals()[config_model["model name"]](couplings=config_model["couplings"])
+    model = _MODEL_CLASSES[config_model["model name"]](
+        couplings=config_model["couplings"]
+    )
 
     # checkpoint path
     if config_bootstrap["checkpoint_path"] is None:
@@ -443,7 +467,7 @@ def run_bootstrap_from_config(
             )
 
     # build the bootstrap
-    bootstrap = globals()[config_model["bootstrap class"]](
+    bootstrap = _BOOTSTRAP_CLASSES[config_model["bootstrap class"]](
         matrix_system=model.matrix_system,
         hamiltonian=model.hamiltonian,
         gauge_generator=model.gauge_generator,
