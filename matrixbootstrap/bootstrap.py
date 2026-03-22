@@ -803,6 +803,46 @@ class BootstrapSystem:
             matrix_shape=(len(self.linear_constraints), len(self.operator_list)),
         )
 
+    def _project_double_trace(
+        self, dt_operator: DoubleTraceOperator, K: np.ndarray
+    ) -> np.ndarray:
+        """
+        Project a double-trace operator into the null-space basis without forming the
+        full (n_ops x n_ops) matrix.
+
+        Each double-trace term <tr(op1)><tr(op2)> contributes a rank-1 update
+        e_{i1} e_{i2}^T to A_I.  The projected matrix K^T A_I K can therefore be
+        computed directly from pairs of rows of K:
+
+            K^T A_I K = sum_{(op1,op2)} sign * coeff * sym( K[i1,:] outer K[i2,:] )
+
+        This costs O(d^2 * len(dt_operator)) instead of O(d^2 * n_ops) for the
+        naive K^T @ A_I @ K triple product.
+
+        Parameters
+        ----------
+        dt_operator : DoubleTraceOperator
+        K : np.ndarray
+            Dense null-space matrix of shape (n_ops, d).
+
+        Returns
+        -------
+        np.ndarray
+            Shape (1, d^2).  Equals -(K^T A_I K).ravel() (the minus sign keeps
+            the convention LHS - RHS = 0).
+        """
+        d = K.shape[1]
+        result = np.zeros((d, d))
+        for (op1, op2), coeff in dt_operator:
+            idx1 = self.operator_dict[op1]
+            idx2 = self.operator_dict[op2]
+            both_odd = (len(op1) % 2 == 1) and (len(op2) % 2 == 1)
+            sign = -1 if both_odd else 1
+            k1 = K[idx1, :]
+            k2 = K[idx2, :]
+            result += sign * coeff / 2 * (np.outer(k1, k2) + np.outer(k2, k1))
+        return csr_matrix(-result.reshape((1, d**2)))
+
     def build_quadratic_constraints(self) -> dict[str, np.ndarray]:
         """
         Build the quadratic constraints. The quadratic constraints are exclusively due to
@@ -816,91 +856,78 @@ class BootstrapSystem:
 
         where A'_{Iab} = A_{Iij} K_{ia} K_{jb}, B'_{Ia} = B_{Ii} K_{ia}
 
-        The quadratic constraint tensor can be written as
-            A_{Iij} = (1/2) sum_{k=0}^{K_I-1} (v_i^{(I,k)} v_j^{(I,k)} + v_j^{(I,k)} v_i^{(I,k)})
-        for vectors v^{(I,k)}. For each I, the vectors correspond to the double trace terms, <tr()> <tr()>.
-
         Returns
         -------
         dict[str, np.nparray]
             The constraint arrays, contained in a dictionary like so
             {'quadratic': A, 'linear': B}
         """
-
         if self.quadratic_constraints is None:
             self.build_linear_constraints()
-        quadratic_constraints = self.quadratic_constraints
-
-        additional_constraints = []
         if self.null_space_matrix is None:
             self.build_null_space_matrix()
-        null_space_matrix = self.null_space_matrix
 
-        linear_terms = []
-        quadratic_terms = []
-
-        # add <1> = <1>^2
-        normalization_constraint = {
+        # normalization constraint <1> = <1>^2; added once outside the loop
+        all_constraints = dict(self.quadratic_constraints)
+        all_constraints[None] = {
             "lhs": SingleTraceOperator(data={(): 1}),
             "rhs": DoubleTraceOperator(data={((), ()): 1}),
         }
-        quadratic_constraints[None] = normalization_constraint
 
-        # loop over constraints
-        logger.info(
-            "Building quadratic constraints (%d total)...", len(quadratic_constraints)
-        )
-        for constraint_idx, (operator_idx, constraint) in enumerate(
-            quadratic_constraints.items()
-        ):
-            logger.debug(
-                "Processing quadratic constraint %d/%d",
-                constraint_idx + 1,
-                len(quadratic_constraints),
-            )
-            # debug(f"Memory usage: {psutil.Process().memory_info().rss / 1024 ** 2}")
+        while True:
+            # convert to dense once per iteration for fast row access in _project_double_trace
+            K = self.null_space_matrix.toarray()
 
-            lhs = constraint["lhs"]
-            rhs = constraint["rhs"]
+            linear_terms = []
+            quadratic_terms = []
+            additional_constraints = []
 
-            # initialize the quadratic constraint matrix
-            # linear_constraint_vector = self.single_trace_to_coefficient_vector(lhs)
-            linear_constraint_vector = self.single_trace_to_coefficient_vector(
-                st_operator=lhs, return_null_basis=True
-            )
-            quadratic_matrix = self.double_trace_to_coefficient_matrix(rhs)
-
-            # transform to null basis
-            # the minus sign is very important: (-RHS + LHS = 0)
-            # linear_constraint_vector = linear_constraint_vector @ null_space_matrix
-            quadratic_matrix = (
-                -null_space_matrix.T @ quadratic_matrix @ null_space_matrix
-            )
-
-            # reshape the (d,d) matrix to a (1,d^2) matrix
-            quadratic_matrix = quadratic_matrix.reshape((1, self.param_dim_null**2))
-
-            linear_is_zero = np.max(np.abs(linear_constraint_vector)) < self.tol
-            quadratic_is_zero = np.max(np.abs(quadratic_matrix)) < self.tol
-
-            if self.simplify_quadratic:
-                if not quadratic_is_zero:
-                    linear_terms.append(csr_matrix(linear_constraint_vector))
-                    quadratic_terms.append(quadratic_matrix)
-                elif not linear_is_zero:
-                    additional_constraints.append(lhs)
-            else:
-                if not quadratic_is_zero or not linear_is_zero:
-                    linear_terms.append(csr_matrix(linear_constraint_vector))
-                    quadratic_terms.append(quadratic_matrix)
-
-        if self.simplify_quadratic and len(additional_constraints) > 0:
             logger.info(
-                "Adding %d new linear constraints from quadratic simplification; rebuilding null space",
-                len(additional_constraints),
+                "Building quadratic constraints (%d total)...", len(all_constraints)
             )
-            self.build_null_space_matrix(additional_constraints=additional_constraints)
-            return self.build_quadratic_constraints()
+            for constraint_idx, (operator_idx, constraint) in enumerate(
+                all_constraints.items()
+            ):
+                logger.debug(
+                    "Processing quadratic constraint %d/%d",
+                    constraint_idx + 1,
+                    len(all_constraints),
+                )
+
+                lhs = constraint["lhs"]
+                rhs = constraint["rhs"]
+
+                linear_constraint_vector = self.single_trace_to_coefficient_vector(
+                    st_operator=lhs, return_null_basis=True
+                )
+                # project double-trace RHS into null basis using the factored form
+                # the minus sign is important: constraint is LHS - RHS = 0
+                quadratic_matrix = self._project_double_trace(rhs, K)
+
+                linear_is_zero = np.max(np.abs(linear_constraint_vector)) < self.tol
+                quadratic_is_zero = np.max(np.abs(quadratic_matrix)) < self.tol
+
+                if self.simplify_quadratic:
+                    if not quadratic_is_zero:
+                        linear_terms.append(csr_matrix(linear_constraint_vector))
+                        quadratic_terms.append(quadratic_matrix)
+                    elif not linear_is_zero:
+                        additional_constraints.append(lhs)
+                else:
+                    if not quadratic_is_zero or not linear_is_zero:
+                        linear_terms.append(csr_matrix(linear_constraint_vector))
+                        quadratic_terms.append(quadratic_matrix)
+
+            if self.simplify_quadratic and additional_constraints:
+                logger.info(
+                    "Adding %d new linear constraints from quadratic simplification; rebuilding null space",
+                    len(additional_constraints),
+                )
+                self.build_null_space_matrix(
+                    additional_constraints=additional_constraints
+                )
+            else:
+                break
 
         # map to sparse matrices
         quadratic_terms = vstack(quadratic_terms)
