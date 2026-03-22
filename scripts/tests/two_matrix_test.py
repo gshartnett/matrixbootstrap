@@ -31,7 +31,9 @@ generate_config_two_matrix(
     init_scale=1e-1,
     optimization_method="newton",
     cvxpy_solver="SCS",
-    reg=1e-5,
+    reg=1e-4,
+    eps_abs=1e-7,
+    eps_rel=1e-7,
 )
 
 # execute
