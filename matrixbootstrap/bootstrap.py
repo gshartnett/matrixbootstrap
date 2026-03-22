@@ -347,6 +347,7 @@ class BootstrapSystem:
 
         # otherwise, generate them
         else:
+            os.makedirs("checkpoints/rotational_symmetry_constraints", exist_ok=True)
             total_constraints = []  # all constraints
             n = len(self.matrix_system.operator_basis)
 
