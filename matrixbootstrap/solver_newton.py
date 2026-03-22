@@ -5,9 +5,12 @@ import numpy as np
 import scipy.sparse as sparse
 from scipy.sparse import csr_matrix
 from scipy.linalg import ishermitian
+import logging
+
 from matrixbootstrap.algebra import SingleTraceOperator
 from matrixbootstrap.bootstrap import BootstrapSystem
-from matrixbootstrap.debug_utils import debug
+
+logger = logging.getLogger(__name__)
 from matrixbootstrap.solver_trustregion import (
     get_quadratic_constraint_vector_sparse as get_quadratic_constraint_vector,
 )
@@ -104,7 +107,7 @@ def sdp_minimize(
     # table gives rise to a real bootstrap matrix - e.g., if odd-degree expectation values
     # vanish for the given param vector.
     if np.max(np.abs(bootstrap_table_sparse.imag)) > 1e-10:
-        debug("Mapping complex bootstrap matrix to real")
+        logger.debug("Mapping complex bootstrap matrix to real")
         bootstrap_table_sparse_real = bootstrap_table_sparse.real
         bootstrap_table_sparse_imag = bootstrap_table_sparse.imag
         matrix_real = cp.reshape(bootstrap_table_sparse_real @ param, (matrix_dim, matrix_dim))
@@ -179,11 +182,9 @@ def sdp_minimize(
     min_bootstrap_eigenvalue = np.linalg.eigvalsh(
         (bootstrap_table_sparse @ param.value).reshape(matrix_dim, matrix_dim)
     )[0]
-    debug(f"sdp_minimize status: {maxiters}: {prob.status}")
-    debug(f"sdp_minimize ||A x - b||: {violation_of_linear_constraints:.4e}")
-    debug(
-        f"sdp_minimize bootstrap matrix min eigenvalue: {min_bootstrap_eigenvalue:.4e}"
-    )
+    logger.debug("sdp_minimize status (maxiters=%d): %s", maxiters, prob.status)
+    logger.debug("sdp_minimize ||A x - b||: %.4e", violation_of_linear_constraints)
+    logger.debug("sdp_minimize bootstrap matrix min eigenvalue: %.4e", min_bootstrap_eigenvalue)
 
     optimization_result = {
         "solver": cvxpy_solver,
@@ -292,7 +293,7 @@ def sdp_minimize_null(
     # table gives rise to a real bootstrap matrix - e.g., if odd-degree expectation values
     # vanish for the given param vector.
     if np.max(np.abs(bootstrap_table_sparse.imag)) > 1e-10:
-        debug("Mapping complex bootstrap matrix to real")
+        logger.debug("Mapping complex bootstrap matrix to real")
         bootstrap_table_sparse_real = bootstrap_table_sparse.real
         bootstrap_table_sparse_imag = bootstrap_table_sparse.imag
         matrix_real = cp.reshape(bootstrap_table_sparse_real @ param, (matrix_dim, matrix_dim))
@@ -315,7 +316,7 @@ def sdp_minimize_null(
         loss += reg * cp.norm(param)
 
     else:
-        debug(f"Minimizing l2 norm of param")
+        logger.debug("sdp_minimize_null: minimizing l2 norm of param")
         loss = cp.norm(param)
 
     # solve the optimization problem
@@ -362,12 +363,9 @@ def sdp_minimize_null(
     min_bootstrap_eigenvalue = np.linalg.eigvalsh(
         (bootstrap_table_sparse @ param.value).reshape(matrix_dim, matrix_dim)
     )[0]
-    debug(f"sdp_minimize status: {prob.status}")
-    #debug(f"sdp_minimize ||x||: {ball_constraint:.4e}")
-    debug(f"sdp_minimize ||A x - b||: {violation_of_linear_constraints:.4e}")
-    debug(
-        f"sdp_minimize bootstrap matrix min eigenvalue: {min_bootstrap_eigenvalue:.4e}"
-    )
+    logger.debug("sdp_minimize status: %s", prob.status)
+    logger.debug("sdp_minimize ||A x - b||: %.4e", violation_of_linear_constraints)
+    logger.debug("sdp_minimize bootstrap matrix min eigenvalue: %.4e", min_bootstrap_eigenvalue)
 
     optimization_result = {
         "solver": cvxpy_solver,
@@ -439,7 +437,7 @@ def solve_bootstrap(
     """
     if PRNG_seed is not None:
         np.random.seed(PRNG_seed)
-        debug(f"setting PRNG seed to {PRNG_seed}")
+        logger.debug("Setting PRNG seed to %s", PRNG_seed)
 
     # get the bootstrap constraints necessary for the optimization
     # linear constraints
@@ -457,20 +455,20 @@ def solve_bootstrap(
     bootstrap_table_sparse = bootstrap.bootstrap_table_sparse
 
     # confirm bootstrap table is consistent with hermitian bootstrap matrix
-    debug(f"Boostrap matrix dtype: {bootstrap_table_sparse.dtype}")
+    logger.debug("Bootstrap table dtype: %s", bootstrap_table_sparse.dtype)
     bootstrap_matrix_tmp = bootstrap_table_sparse @ np.random.normal(size=bootstrap.param_dim_null)
     bootstrap_matrix_tmp = bootstrap_matrix_tmp.reshape((bootstrap.bootstrap_matrix_dim, bootstrap.bootstrap_matrix_dim))
     if not ishermitian(bootstrap_matrix_tmp, atol=1e-12):
         raise ValueError("Error, bootstrap matrix is not Hermitian.")
-    debug(f"Final bootstrap parameter dimension: {bootstrap.param_dim_null}")
+    logger.debug("Bootstrap parameter dimension: %d", bootstrap.param_dim_null)
 
     # initialize the variable vector
     if init is None:
-        debug(f"Initializing randomly with init_scale={init_scale:.2e}")
+        logger.debug("Initializing randomly with init_scale=%.2e", init_scale)
         init = init_scale * np.random.normal(size=bootstrap.param_dim_null)
     else:
         init = np.asarray(init)
-        debug(f"Initializing as param={init}")
+        logger.debug("Initializing from provided param vector")
     param_array = init
     param_array_old = None
 
@@ -509,19 +507,7 @@ def solve_bootstrap(
     # iterate over steps
     for step in range(maxiters):
 
-        debug(f"\n\nstep: {step+1}/{maxiters}")
-        debug(f"PRNG seed: {PRNG_seed}")
-        debug(f"radius: {radius:.4e}")
-        debug(f"reg: {reg:.4e}")
-        debug(f"eps_abs: {eps_abs:.4e}")
-        debug(f"eps_rel: {eps_rel:.4e}")
-        debug(f"eps_infeas: {eps_infeas:.4e}")
-        debug(f"init_scale: {init_scale:.4e}")
-        debug(f"tol: {tol:.4e}")
-        debug(f"cvxpy_solver: {cvxpy_solver}")
-        for pair in st_operator_inhomo_constraints:
-            debug(f"st_operator_inhomo_constraints: {pair[0]}, val={pair[1]:.4f}")
-        debug(f"st_op_to_minimize: {st_operator_to_minimize}")
+        logger.debug("step %d/%d (radius=%.4e, reg=%.4e)", step + 1, maxiters, radius, reg)
 
         # build the Newton method update for the quadratic constraints, which
         # produces a second inhomogenous linear equation A' x = b'
@@ -535,10 +521,8 @@ def solve_bootstrap(
         # includes <1>=1, optional constraints like <O>=e, and the linearized
         # quadratic constraints
         if step == 0:
-            debug(f"Not using Ax=b for quadratic constraints")
             linear_inhomogeneous_eq = linear_inhomogeneous_eq_no_quadratic
         else:
-            debug(f"Using Ax=b for quadratic constraints")
             linear_inhomogeneous_eq = (
                 sparse.vstack(
                     [linear_inhomogeneous_eq_no_quadratic[0], quad_cons_grad]
@@ -582,7 +566,8 @@ def solve_bootstrap(
                 cvxpy_solver=cvxpy_solver,
             )
 
-        except:
+        except Exception:
+            logger.exception("sdp_minimize_null failed at step %d", step + 1)
             return None, None
 
         # interpolate between the old and new solutions
@@ -605,12 +590,13 @@ def solve_bootstrap(
             quad_constraint_violation_norm
         )
 
-        debug(f"norm(param) = {np.linalg.norm(param_array):.4e}")
-        debug(
-            f"max violation of quadratic constraints: {max_quad_constraint_violation:.4e}"
+        logger.info(
+            "step %d/%d: objective=%.4f, max_quad_violation=%.4e, ||param||=%.4e",
+            step + 1, maxiters,
+            linear_objective_vector @ param_array if linear_objective_vector is not None else float("nan"),
+            max_quad_constraint_violation,
+            np.linalg.norm(param_array),
         )
-        if linear_objective_vector is not None:
-            debug(f"objective: {linear_objective_vector @ param_array:.4f}")
 
         # add the seed to the result
         optimization_result["PRNG_seed"] = PRNG_seed

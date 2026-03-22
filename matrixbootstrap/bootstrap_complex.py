@@ -24,7 +24,9 @@ from matrixbootstrap.algebra import (
     MatrixSystem,
     SingleTraceOperator,
 )
-from matrixbootstrap.debug_utils import debug
+import logging
+
+logger = logging.getLogger(__name__)
 from matrixbootstrap.linear_algebra import (
     create_sparse_matrix_from_dict,
     get_null_space_sparse,
@@ -176,7 +178,7 @@ class BootstrapSystemComplex:
         linear_constraint_matrix = self.build_linear_constraints(additional_constraints)
 
         if self.verbose:
-            debug(
+            logger.debug(
                 f"Building the null space matrix. The linear constraint matrix has dimensions {linear_constraint_matrix.shape}"
             )
 
@@ -541,7 +543,7 @@ class BootstrapSystemComplex:
                 )
             )
             if self.verbose:
-                debug(
+                logger.debug(
                     f"Generating Hamiltonian constraints, operator {op_idx+1}/{len(self.operator_list)}"
                 )
 
@@ -563,7 +565,7 @@ class BootstrapSystemComplex:
             constraints.append((self.gauge_generator * MatrixOperator(data={op: 1})).trace())
 
             if self.verbose:
-                debug(
+                logger.debug(
                     f"Generating gauge constraints, operator {op_idx+1}/{len(self.operator_list)}"
                 )
 
@@ -637,7 +639,7 @@ class BootstrapSystemComplex:
                     quadratic_constraints[op_idx] = {"lhs": eq_lhs, "rhs": eq_rhs}
 
             if self.verbose:
-                debug(
+                logger.debug(
                     f"Generating cyclic constraints, operator {op_idx+1}/{len(self.operator_list)}"
                 )
 
@@ -753,7 +755,7 @@ class BootstrapSystemComplex:
             The set of linear constraints.
         """
         if self.verbose:
-            debug(f"Building the linear constraint matrix")
+            logger.debug(f"Building the linear constraint matrix")
 
         # grab the constraints, building them if necessary
         if self.linear_constraints is None:
@@ -881,10 +883,10 @@ class BootstrapSystemComplex:
         for constraint_idx, constraint in enumerate(quadratic_constraints.values()):
 
             if self.verbose:
-                debug(
+                logger.debug(
                     f"Generating quadratic constraints, operator {constraint_idx+1}/{len(quadratic_constraints)}"
                 )
-            debug(f"Memory usage: {psutil.Process().memory_info().rss / 1024 ** 2}")
+            logger.debug(f"Memory usage: {psutil.Process().memory_info().rss / 1024 ** 2}")
 
             lhs = constraint["lhs"]
             rhs = constraint["rhs"]
@@ -948,32 +950,32 @@ class BootstrapSystemComplex:
                 if not quadratic_is_zero:
                     linear_terms.append(csr_matrix(linear_constraint_vectorR))
                     quadratic_terms.append(QR)
-                    debug("Real AAAA")
+                    logger.debug("Real AAAA")
                 elif not linear_is_zero:
                     additional_constraints.append(lhs.get_real_part())
-                    debug("Real BBBB")
+                    logger.debug("Real BBBB")
             else:
                 if not quadratic_is_zero or not linear_is_zero:
                     linear_terms.append(csr_matrix(linear_constraint_vectorR))
                     quadratic_terms.append(QR)
-                    debug(f"Real CCCC, quadratic_is_zero={linear_is_zero}, quadratic_is_zero={linear_is_zero}")
+                    logger.debug(f"Real CCCC, quadratic_is_zero={linear_is_zero}, quadratic_is_zero={linear_is_zero}")
 
             # imaginary part
             linear_is_zero = np.max(np.abs(linear_constraint_vectorI)) < self.tol
             quadratic_is_zero = np.max(np.abs(QI)) < self.tol
             if self.simplify_quadratic:
                 if not quadratic_is_zero:
-                    debug("Imag AAAA")
+                    logger.debug("Imag AAAA")
                     linear_terms.append(csr_matrix(linear_constraint_vectorI))
                     quadratic_terms.append(QI)
                 elif not linear_is_zero:
                     additional_constraints.append(lhs.get_imag_part())
-                    debug("Imag BBBB")
+                    logger.debug("Imag BBBB")
             else:
                 if not quadratic_is_zero or not linear_is_zero:
                     linear_terms.append(csr_matrix(linear_constraint_vectorI))
                     quadratic_terms.append(QI)
-                    debug(f"Imag CCCC, quadratic_is_zero={linear_is_zero}, quadratic_is_zero={linear_is_zero}")
+                    logger.debug(f"Imag CCCC, quadratic_is_zero={linear_is_zero}, quadratic_is_zero={linear_is_zero}")
 
             if constraint_idx > 100:
                 assert 1==0
