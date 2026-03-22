@@ -537,6 +537,84 @@ def _init_worker_logging():
     logging.basicConfig(level=logging.INFO)
 
 
+def _get_checkpoint_path(config):
+    """Extract the checkpoint path from a loaded config dict."""
+    config_model = config["model"]
+    config_bootstrap = config["bootstrap"]
+    if config_bootstrap["checkpoint_path"] is None:
+        return (
+            "checkpoints/"
+            + config_model["model name"]
+            + "_L_"
+            + str(config_bootstrap["max_degree_L"])
+        )
+    return "checkpoints/" + config_bootstrap["checkpoint_path"]
+
+
+def _build_checkpoint_from_config(config_filename, config_dir):
+    """
+    Build and save the full bootstrap checkpoint for a config without running
+    the optimization. Subsequent runs with the same checkpoint path will load
+    pre-built constraints, null space, quadratic constraints, and bootstrap
+    table rather than regenerating them.
+    """
+    with open(f"configs/{config_dir}/{config_filename}.yaml") as stream:
+        config = yaml.safe_load(stream)
+    config_model = config["model"]
+    config_bootstrap = config["bootstrap"]
+
+    checkpoint_path = _get_checkpoint_path(config)
+
+    # skip if already fully built
+    if os.path.exists(checkpoint_path + "/bootstrap_table_sparse.npz"):
+        logger.info("Checkpoint already complete: %s", checkpoint_path)
+        return
+
+    logger.info("Building checkpoint: %s", checkpoint_path)
+    os.makedirs(checkpoint_path, exist_ok=True)
+
+    model = _MODEL_CLASSES[config_model["model name"]](
+        couplings=config_model["couplings"]
+    )
+    if not config_bootstrap["impose_symmetries"]:
+        model.symmetry_generators = None
+    if not config_bootstrap["impose_gauge_symmetry"]:
+        model.gauge_generator = None
+
+    bootstrap = _BOOTSTRAP_CLASSES[config_model["bootstrap class"]](
+        matrix_system=model.matrix_system,
+        hamiltonian=model.hamiltonian,
+        gauge_generator=model.gauge_generator,
+        max_degree_L=config_bootstrap["max_degree_L"],
+        odd_degree_vanish=config_bootstrap["odd_degree_vanish"],
+        simplify_quadratic=config_bootstrap["simplify_quadratic"],
+        symmetry_generators=model.symmetry_generators,
+        checkpoint_path=checkpoint_path,
+    )
+
+    # build and save all components in dependency order
+    bootstrap.build_null_space_matrix()  # → build_linear_constraints → generate_constraints
+    bootstrap.build_quadratic_constraints()  # needs null_space_matrix
+    bootstrap.build_bootstrap_table()  # needs null_space_matrix
+
+
+def _build_all_checkpoints(config_filenames, config_dir):
+    """
+    Build checkpoints for all unique (model, L, couplings) combinations found
+    in the config files. One representative config per unique checkpoint path
+    is used; all others sharing that path benefit from the same checkpoint.
+    """
+    seen = set()
+    for config_filename in config_filenames:
+        with open(f"configs/{config_dir}/{config_filename}.yaml") as stream:
+            config = yaml.safe_load(stream)
+        checkpoint_path = _get_checkpoint_path(config)
+        if checkpoint_path in seen:
+            continue
+        seen.add(checkpoint_path)
+        _build_checkpoint_from_config(config_filename, config_dir)
+
+
 def run_all_configs(
     config_dir,
     parallel=False,
@@ -557,6 +635,12 @@ def run_all_configs(
                 check_if_exists_already=check_if_exists_already,
             )
     else:
+        # Phase 1: build all checkpoints sequentially before spawning workers.
+        # Constraint generation and null space computation are shared across all
+        # configs with the same (model, L, couplings) — only the optimization
+        # target and inhomogeneous constraint differ per config.
+        _build_all_checkpoints(config_filenames, config_dir)
+
         with ProcessPoolExecutor(
             max_workers, initializer=_init_worker_logging
         ) as executor:
