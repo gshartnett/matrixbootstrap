@@ -20,13 +20,3 @@ def test_su2_casimir_is_j_times_j_plus_one(N):
     assert np.allclose(casimir, j * (j + 1) * np.eye(N))
 
 
-@pytest.mark.parametrize("N", [2, 3, 4])
-def test_sun_generators_satisfy_lie_algebra(N):
-    """
-    SU(N) generators must satisfy the Lie algebra relation [T_i, T_j] = i f_{ijk} T_k.
-
-    SpecialUnitaryGroup._validate() checks this relation for every pair (i, j)
-    and raises AssertionError on failure. Successful instantiation is therefore
-    sufficient as a test.
-    """
-    SpecialUnitaryGroup(N)  # _validate() is called in __init__

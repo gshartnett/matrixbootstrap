@@ -10,8 +10,11 @@ def one_matrix_bootstrap_L1():
     """
     A minimal BootstrapSystem for the harmonic oscillator (g4=g6=0) at L=1.
 
-    This is the smallest non-trivial bootstrap: 7 operators, no quartic coupling,
-    odd-degree operators set to zero by parity. Cheap to build, used across tests.
+    The L=1 bootstrap tracks all single-trace monomials of degree <= 2L=2 in X
+    and Pi: {1, X, Pi, X², X·Pi, Pi·X, Pi²} — 7 operators total. The bootstrap
+    matrix is 3x3, indexed by the degree-<=1 monomials {1, X, Pi}. With
+    odd_degree_vanish=True, <X> = <Pi> = 0, leaving 5 free expectation values.
+    Cheap to build; used as a shared fixture across tests.
     """
     model = OneMatrix(couplings={"g2": 1.0, "g4": 0.0, "g6": 0.0})
     return BootstrapSystem(
