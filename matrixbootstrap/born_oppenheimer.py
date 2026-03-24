@@ -114,6 +114,62 @@ class BornOppenheimer:
 
         return non_local_energy
 
+    def E_var_discretized(self, rho: np.ndarray, x_grid: np.ndarray) -> float:
+        """
+        The variational energy functional E_var[rho] — gives an upper bound on E_0.
+
+        This is E_BO[rho] plus the non-adiabatic correction term (HKK eq. A20):
+
+            E_var = E_BO + ∫∫∫ ρ(x)ρ(y)ρ(z) * (ω(x,z)-ω(y,z))^2
+                               / (4 ω(x,z) ω(y,z) (x-y)^2) dx dy dz
+
+        The triple integral has a removable singularity at x=y (the numerator also
+        vanishes there), handled by setting those terms to zero.
+        """
+        E_bo = self.E_BO_discretized(rho, x_grid)
+        dx = x_grid[1] - x_grid[0]
+
+        # omega[i, j] = sqrt(m^2 + g^2*(x_i - x_j)^2)
+        xi, xj = np.meshgrid(x_grid, x_grid, indexing="ij")
+        omega = np.sqrt(self.m**2 + self.g**2 * (xi - xj) ** 2)
+
+        # omega_ik[i, k] = omega[i, k], omega_jk[j, k] = omega[j, k]
+        # broadcast to (n, n, n) with axes (i, j, k)
+        omega_ik = omega[:, np.newaxis, :]  # (n, 1, n)
+        omega_jk = omega[np.newaxis, :, :]  # (1, n, n)
+
+        xi_sq = (xi - xj) ** 2  # (n, n)
+        denom = 4.0 * omega_ik * omega_jk * xi_sq[:, :, np.newaxis]  # (n, n, n)
+        diff_sq = (omega_ik - omega_jk) ** 2  # numerator (n, n, n)
+
+        rho_triple = (
+            rho[:, np.newaxis, np.newaxis]
+            * rho[np.newaxis, :, np.newaxis]
+            * rho[np.newaxis, np.newaxis, :]
+        )  # (n, n, n)
+
+        # off-diagonal (i != j): evaluate normally
+        with np.errstate(divide="ignore", invalid="ignore"):
+            integrand = rho_triple * diff_sq / denom
+
+        # diagonal (i == j): removable singularity; L'Hôpital limit is
+        #   (dω/dx)² / (4ω²) = g⁴(x_i - x_k)² / (4 ω(x_i, x_k)⁴)
+        # Fill diagonal slice integrand[i, i, k] with the analytical limit.
+        diag_limit = (
+            self.g**4
+            * (x_grid[:, np.newaxis] - x_grid[np.newaxis, :]) ** 2
+            / (4.0 * omega**4)
+        )  # (n, n), indexed by (i, k)
+        rho_diag = rho[:, np.newaxis] ** 2 * rho[np.newaxis, :]  # ρ(xi)²·ρ(xk), (n, n)
+        diag_values = rho_diag * diag_limit  # (n, n)
+
+        # Write diagonal into integrand: integrand[i, i, k] = diag_values[i, k]
+        idx = np.arange(len(x_grid))
+        integrand[idx, idx, :] = diag_values
+
+        E_extra = np.sum(integrand) * dx**3
+        return E_bo + E_extra
+
     def E_BO_discretized(self, rho: np.ndarray, x_grid: np.ndarray) -> float:
         """
         The discretized Born-Oppenheimer energy functional.
@@ -185,6 +241,34 @@ class BornOppenheimer:
             },
         )
 
+        return result
+
+    def solve_upper(self, x_grid: np.ndarray) -> OptimizeResult:
+        """
+        Find the upper bound on E_0 by minimizing E_var[rho] (HKK eq. A20).
+
+        The triple integral makes this O(n^3) — use a coarser grid than solve().
+        """
+        bounds = [(0, None)] * len(x_grid)
+        x_min, x_max = x_grid[0], x_grid[-1]
+        initial_rho = np.ones_like(x_grid) / (x_max - x_min)
+
+        scale = 0.5 if self.g2 is not None else 1.0
+
+        def energy_func(rho, grid):
+            return self.E_var_discretized(rho, grid) * scale
+
+        result = minimize(
+            energy_func,
+            initial_rho,
+            args=(x_grid),
+            method="SLSQP",
+            bounds=bounds,
+            constraints={
+                "type": "eq",
+                "fun": lambda rho: self.normalization_constraint(rho, x_grid),
+            },
+        )
         return result
 
 
