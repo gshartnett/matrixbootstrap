@@ -90,10 +90,6 @@ class BootstrapSystem(ABC):
 
         self._validate()
 
-    # ------------------------------------------------------------------
-    # Abstract methods — must be implemented by subclasses
-    # ------------------------------------------------------------------
-
     @abstractmethod
     def _init_subclass_vars(self) -> None:
         """
@@ -145,9 +141,14 @@ class BootstrapSystem(ABC):
     ) -> bool:
         """Return True if the bootstrap matrix passes the Hermitian check."""
 
-    # ------------------------------------------------------------------
-    # Shared concrete methods
-    # ------------------------------------------------------------------
+    def build_augmented_bootstrap_table(self) -> np.ndarray:
+        """
+        Build the v-vector table for the factorization-block constraint.
+        Only supported by BootstrapSystemReal; raises NotImplementedError otherwise.
+        """
+        raise NotImplementedError(
+            "build_augmented_bootstrap_table is only supported for BootstrapSystemReal."
+        )
 
     def _validate(self):
         """
@@ -607,10 +608,6 @@ class BootstrapSystemReal(BootstrapSystem):
     functionality lives here unchanged.
     """
 
-    # ------------------------------------------------------------------
-    # Subclass initialisation
-    # ------------------------------------------------------------------
-
     def _init_subclass_vars(self) -> None:
         self.operator_list = self.generate_operators(2 * self.max_degree_L)
         self.operator_dict = {op: idx for idx, op in enumerate(self.operator_list)}
@@ -620,10 +617,6 @@ class BootstrapSystemReal(BootstrapSystem):
         if 2 * self.max_degree_L < self.hamiltonian.max_degree:
             raise ValueError("2 * max_degree_L must be >= max degree of Hamiltonian.")
         self.param_dim = len(self.operator_dict)
-
-    # ------------------------------------------------------------------
-    # Abstract method implementations
-    # ------------------------------------------------------------------
 
     def _check_bootstrap_matrix_hermitian(
         self, matrix: np.ndarray, atol: float

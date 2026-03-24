@@ -555,10 +555,7 @@ def solve_bootstrap(
 
     # factorization-block v-table (only built when needed)
     factorization_v_table = (
-        bootstrap.build_augmented_bootstrap_table()
-        if use_factorization_block
-        and hasattr(bootstrap, "build_augmented_bootstrap_table")
-        else None
+        bootstrap.build_augmented_bootstrap_table() if use_factorization_block else None
     )
 
     # confirm bootstrap table is consistent with hermitian bootstrap matrix
