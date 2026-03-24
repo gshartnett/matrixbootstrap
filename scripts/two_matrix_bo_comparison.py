@@ -15,6 +15,12 @@ BO upper/lower bounds: both are variational upper bounds on the true BO minimum.
 The band arises from grid resolution — a coarser/narrower grid is more restrictive
 and gives higher energy (BO "upper"); a finer/wider grid gives lower energy (BO "lower").
 
+Known limitation: the bootstrap results are strongly regularization-dependent.
+By varying reg, the optimizer energy can be moved anywhere within the BO band.
+The apparent agreement with HKK is therefore not a rigorous validation — reg acts
+as a free parameter that controls where the optimizer lands.  For rigorous lower
+bounds without regularization, use two_matrix_feasibility_bound.py instead.
+
 Usage:
     python scripts/two_matrix_bo_comparison.py           # generate configs + run + plot
     python scripts/two_matrix_bo_comparison.py --plot    # plot only (from saved results)
