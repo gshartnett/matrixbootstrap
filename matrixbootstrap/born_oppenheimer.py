@@ -30,7 +30,7 @@ class BornOppenheimer:
             self.g2 = g2
             self.g4 = g4
             self.m = np.sqrt(g2)
-            self.g = np.sqrt(g4) / 2
+            self.g = np.sqrt(g4 / 2)
 
     def normalization_constraint(self, rho: np.ndarray, x_grid: np.ndarray) -> float:
         """
@@ -201,7 +201,7 @@ def main(m: float = 1, g: float = 1, npoints: int = 100):
 
     # set-up the BO model (my conventions)
     g2 = m**2
-    g4 = 4 * g**2
+    g4 = 2 * g**2
     born_oppenheimer = BornOppenheimer(g2=g2, g4=g4)
     result = born_oppenheimer.solve(x_grid=x_grid)
     optimal_energy_me = result.fun

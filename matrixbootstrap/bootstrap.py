@@ -1140,6 +1140,43 @@ class BootstrapSystem:
 
         return bootstrap_matrix
 
+    def build_augmented_bootstrap_table(self) -> np.ndarray:
+        """
+        Build the v-vector table needed for the factorization-block constraint
+
+            M_hat = [ M    v ] ⪰ 0,
+                    [ v^T  1 ]
+
+        which is equivalent to M ⪰ v v^T — a necessary condition for large-N
+        factorization.  v_I = <tr O_I> for each operator O_I in the bootstrap
+        basis.
+
+        Returns
+        -------
+        np.ndarray
+            Shape (bootstrap_matrix_dim, param_dim_null).  Row I is the
+            null-space coefficient vector for <O_I>, so that
+            v_I(param) = v_table[I, :] @ param.
+        """
+        if self.null_space_matrix is None:
+            raise ValueError(
+                "Call build_null_space_matrix() before build_augmented_bootstrap_table()."
+            )
+
+        n = self.bootstrap_matrix_dim
+        d = self.param_dim_null
+        v_table = np.zeros((n, d))
+        for row, op in enumerate(self.bootstrap_basis_list):
+            coeff = self.single_trace_to_coefficient_vector(
+                SingleTraceOperator(data={op: 1}), return_null_basis=True
+            )
+            # Even-degree operators: coeff is real.
+            # Odd-degree operators with odd_degree_vanish=True: coeff is zero.
+            if np.allclose(coeff.imag, 0, atol=1e-12):
+                v_table[row, :] = coeff.real
+            # purely imaginary → zero contribution to v (handled by leaving zeros)
+        return v_table
+
     def get_operator_expectation_value(
         self, st_operator: SingleTraceOperator, param: np.ndarray
     ) -> float:

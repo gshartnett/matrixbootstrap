@@ -86,6 +86,8 @@ def sdp_minimize(
         solver = cp.ECOS
     elif cvxpy_solver == "OSQP":
         solver = cp.OSQP
+    elif cvxpy_solver == "CLARABEL":
+        solver = cp.CLARABEL
     elif cvxpy_solver == "MOSEK":
         solver = cp.MOSEK
     else:
@@ -164,6 +166,16 @@ def sdp_minimize(
             eps_infeas=eps_infeas,
             solver=solver,
         )
+    elif cvxpy_solver == "CLARABEL":
+        prob.solve(
+            verbose=verbose,
+            max_iter=maxiters,
+            tol_gap_abs=eps_abs,
+            tol_gap_rel=eps_rel,
+            tol_feas=eps_abs,
+            static_regularization_constant=1e-4,
+            solver=solver,
+        )
     elif cvxpy_solver == "MOSEK":
         prob.solve(
             verbose=verbose,
@@ -227,6 +239,8 @@ def sdp_minimize_null(
     reg: float = 1e-4,
     verbose: bool = False,
     cvxpy_solver: str = "SCS",
+    use_factorization_block: bool = False,
+    factorization_v_table: Optional[np.ndarray] = None,
 ) -> tuple[bool, str, np.ndarray]:
     """
     Performs the following SDP minimization over the vector variable x:
@@ -283,6 +297,8 @@ def sdp_minimize_null(
         solver = cp.ECOS
     elif cvxpy_solver == "OSQP":
         solver = cp.OSQP
+    elif cvxpy_solver == "CLARABEL":
+        solver = cp.CLARABEL
     elif cvxpy_solver == "MOSEK":
         solver = cp.MOSEK
     else:
@@ -290,11 +306,20 @@ def sdp_minimize_null(
 
     # set-up
     matrix_dim = int(np.sqrt(bootstrap_table_sparse.shape[0]))
-    num_variables = bootstrap_table_sparse.shape[1]
-    param_null = cp.Variable(num_variables)  # declare the cvxpy param
 
-    # write param vector as particular solution plus a null term
-    param = null_space_projector @ param_null + param_particular
+    # For interior-point solvers (CLARABEL, MOSEK) use explicit equality
+    # constraints rather than null-space parameterization. Null-space
+    # parameterization creates a rank-deficient variable space that causes
+    # NumericalError in direct KKT factorization.
+    if cvxpy_solver in ("CLARABEL", "MOSEK"):
+        num_variables = bootstrap_table_sparse.shape[1]
+        param_null = cp.Variable(num_variables)
+        param = param_null
+    else:
+        num_variables = null_space_projector.shape[1]
+        param_null = cp.Variable(num_variables)  # declare the cvxpy param
+        # write param vector as particular solution plus a null term
+        param = null_space_projector @ param_null + param_particular
 
     # build the constraints
     # 1. the PSD bootstrap constraint(s)
@@ -335,6 +360,40 @@ def sdp_minimize_null(
     # constrain param vector to lie within a ball of a given radius
     constraints += [cp.norm(param) <= radius]
 
+    # for interior-point solvers, enforce linear constraints explicitly
+    if cvxpy_solver in ("CLARABEL", "MOSEK"):
+        constraints += [
+            linear_inhomogeneous_eq[0] @ param == linear_inhomogeneous_eq[1]
+        ]
+
+    # optional factorization-block constraint: M_hat = [[M, v], [v^T, 1]] ⪰ 0
+    # This is a necessary condition for large-N factorization M_IJ = <O_I><O_J>
+    # and bounds the SDP from below without making the problem non-convex.
+    if use_factorization_block:
+        if np.max(np.abs(bootstrap_table_sparse.imag)) > 1e-10:
+            raise NotImplementedError(
+                "factorization block not yet implemented for complex bootstrap tables"
+            )
+        if factorization_v_table is None:
+            raise ValueError(
+                "factorization_v_table must be provided when use_factorization_block=True"
+            )
+        n = matrix_dim
+        v_table = factorization_v_table.astype(np.float64)
+        M_cvxpy = cp.reshape(
+            bootstrap_table_sparse.real.astype(np.float64) @ param,
+            (n, n),
+            order="F",
+        )
+        v_expr = cp.reshape(v_table @ param, (n, 1))
+        M_hat = cp.bmat(
+            [
+                [M_cvxpy, v_expr],
+                [v_expr.T, np.ones((1, 1))],
+            ]
+        )
+        constraints.append(M_hat >> 0)
+
     # the loss to minimize
     if linear_objective_vector is not None:
         loss = linear_objective_vector @ param
@@ -355,6 +414,16 @@ def sdp_minimize_null(
             eps_abs=eps_abs,
             eps_rel=eps_rel,
             eps_infeas=eps_infeas,
+            solver=solver,
+        )
+    elif cvxpy_solver == "CLARABEL":
+        prob.solve(
+            verbose=verbose,
+            max_iter=maxiters,
+            tol_gap_abs=eps_abs,
+            tol_gap_rel=eps_rel,
+            tol_feas=eps_abs,
+            static_regularization_constant=1e-4,
             solver=solver,
         )
     elif cvxpy_solver == "MOSEK":
@@ -425,6 +494,7 @@ def solve_bootstrap(
     PRNG_seed=None,
     radius: float = 1e8,
     cvxpy_solver: str = "SCS",
+    use_factorization_block: bool = False,
 ) -> np.ndarray:
     """
     Solve the bootstrap by minimizing the objective function subject to
@@ -482,6 +552,11 @@ def solve_bootstrap(
     if bootstrap.bootstrap_table_sparse is None:
         bootstrap.build_bootstrap_table()
     bootstrap_table_sparse = bootstrap.bootstrap_table_sparse
+
+    # factorization-block v-table (only built when needed)
+    factorization_v_table = (
+        bootstrap.build_augmented_bootstrap_table() if use_factorization_block else None
+    )
 
     # confirm bootstrap table is consistent with hermitian bootstrap matrix
     logger.debug("Bootstrap table dtype: %s", bootstrap_table_sparse.dtype)
@@ -593,7 +668,11 @@ def solve_bootstrap(
 
         param_particular = np.linalg.lstsq(A, b, rcond=None)[0]
         null_space_matrix = get_null_space_dense(matrix=A)
-        null_space_projector = null_space_matrix @ np.linalg.pinv(null_space_matrix)
+        # Pass the thin null-space matrix directly so the CVXPY variable has
+        # only the free (non-degenerate) coordinates. The square projection
+        # null_space_matrix @ pinv(null_space_matrix) is rank-deficient and
+        # causes NumericalError in interior-point solvers (e.g. CLARABEL).
+        null_space_projector = null_space_matrix
 
         # perform the inner convex minimization
         try:
@@ -611,6 +690,8 @@ def solve_bootstrap(
                 reg=reg,
                 verbose=False,
                 cvxpy_solver=cvxpy_solver,
+                use_factorization_block=use_factorization_block,
+                factorization_v_table=factorization_v_table,
             )
 
         except Exception as e:

@@ -60,6 +60,7 @@ optimization_keys_newton = [
     "eps_infeas",
     "radius",
     "PRNG_seed",
+    "use_factorization_block",
 ]
 
 optimization_keys_pytorch = [
@@ -87,6 +88,7 @@ def generate_optimization_config_newton(
     eps_infeas=1e-7,
     radius=1e5,
     cvxpy_solver="SCS",
+    use_factorization_block=False,
 ):
 
     optimization_config_dict = {
@@ -102,6 +104,7 @@ def generate_optimization_config_newton(
         "eps_infeas": eps_infeas,
         "radius": radius,
         "cvxpy_solver": cvxpy_solver,
+        "use_factorization_block": use_factorization_block,
         "optimization_method": "newton",
     }
 
@@ -623,6 +626,23 @@ def run_all_configs(
                 check_if_exists_already=check_if_exists_already,
             )
     else:
+        # Pre-build structural caches serially to avoid parallel write races.
+        # Each unique (model, L) maps to one shared cache; building one config
+        # is sufficient since _build_config_cache skips if already complete.
+        seen_struct_hashes = set()
+        for config_filename in config_filenames:
+            with open(f"runs/{config_dir}/configs/{config_filename}.yaml") as f:
+                import yaml as _yaml
+
+                _cfg = _yaml.safe_load(f)
+            sh = _struct_hash(_cfg)
+            if sh not in seen_struct_hashes:
+                seen_struct_hashes.add(sh)
+                struct_path = f"cache/structural/{sh}"
+                if not os.path.exists(struct_path):
+                    logger.info("Pre-building structural cache: %s", struct_path)
+                    _build_config_cache(config_filename, config_dir)
+
         with ProcessPoolExecutor(
             max_workers, initializer=_init_worker_logging
         ) as executor:
