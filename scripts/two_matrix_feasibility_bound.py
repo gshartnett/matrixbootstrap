@@ -31,7 +31,10 @@ import numpy as np
 import yaml
 
 from matrixbootstrap.algebra import SingleTraceOperator
-from matrixbootstrap.bootstrap import BootstrapSystem
+from matrixbootstrap.bootstrap import (
+    BootstrapSystem,
+    BootstrapSystemReal,
+)
 from matrixbootstrap.born_oppenheimer import BornOppenheimer
 from matrixbootstrap.config_utils import (
     _struct_hash,
@@ -119,7 +122,7 @@ def _build_bootstrap(g2: float, g4: float) -> tuple:
 
     model = TwoMatrix(couplings=config["model"]["couplings"])
 
-    bootstrap = BootstrapSystem(
+    bootstrap = BootstrapSystemReal(
         matrix_system=model.matrix_system,
         hamiltonian=model.hamiltonian,
         gauge_generator=model.gauge_generator,
