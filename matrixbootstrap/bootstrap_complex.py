@@ -819,33 +819,49 @@ class BootstrapSystemComplex:
                 ] = np.real(coeff)
             constraint_idx += 1
 
-        # impose the reality constraints <tr(O^{dagger})> = <tr(O)>* (real part)
-        # if O1^{dagger} = O2, and <tr(O1)> = vR_1 + i vI_1, <tr(O2)> = vR_2 + i vI_2
-        # then the condition becomes
-        # vR_1 = vR_2 and vI_1 = - vI_2
-        # Note that Hermitian operators must be treated separately, else the dictionary encoding will be incorrect
+        # impose the reality constraints <tr(S^dag)> = <tr(S)>*
+        # For operators that are Hermitian or anti-Hermitian:
+        #   S^dag = (-1)^{#anti in S} * reverse(S) ≡ sign_S * reverse(S)
+        # so the constraint is: vR[S] = sign_S * vR[rev(S)], vI[S] = -sign_S * vI[rev(S)]
+        #
+        # Palindrome case (op_str_reversed == op_str):
+        #   sign_S = +1: vI[S] = 0
+        #   sign_S = -1: vR[S] = 0
+        # Non-palindrome case: vR[S] - sign_S*vR[rev(S)] = 0, vI[S] + sign_S*vI[rev(S)] = 0
         for op_str, op_idx in self.operator_dict.items():
 
             op_str_reversed = op_str[::-1]
             op_reversed_idx = self.operator_dict[op_str_reversed]
 
-            # Hermitian operators: set imaginary part to zero
+            num_antihermitian = sum(
+                1 for term in op_str if not self.matrix_system.hermitian_dict[term]
+            )
+            sign_S = (-1) ** num_antihermitian
+
+            # palindrome case
             if op_reversed_idx == op_idx:
-                index_value_dict[(constraint_idx, op_idx + self.param_dim_complex)] = 1
+                if sign_S == 1:
+                    # vI[S] = 0
+                    index_value_dict[
+                        (constraint_idx, op_idx + self.param_dim_complex)
+                    ] = 1
+                else:
+                    # vR[S] = 0
+                    index_value_dict[(constraint_idx, op_idx)] = 1
                 constraint_idx += 1
 
-            # non-Hermitian operators
+            # non-palindrome case
             else:
-                # real part
+                # real part: vR[S] - sign_S * vR[rev(S)] = 0
                 index_value_dict[(constraint_idx, op_idx)] = 1
-                index_value_dict[(constraint_idx, op_reversed_idx)] = -1
+                index_value_dict[(constraint_idx, op_reversed_idx)] = -sign_S
                 constraint_idx += 1
 
-                # imaginary part
+                # imaginary part: vI[S] + sign_S * vI[rev(S)] = 0
                 index_value_dict[(constraint_idx, op_idx + self.param_dim_complex)] = 1
                 index_value_dict[
                     (constraint_idx, op_reversed_idx + self.param_dim_complex)
-                ] = 1
+                ] = sign_S
                 constraint_idx += 1
 
         # assemble the constraint matrix
@@ -1187,6 +1203,7 @@ class BootstrapSystemComplex:
         if self.null_space_matrix is None:
             raise ValueError("Error, null space matrix has not yet been built.")
         null_space_matrix = self.null_space_matrix
+        n_complex = self.param_dim_complex
 
         bootstrap_dict = {}
         for idx1, op_str1 in enumerate(self.bootstrap_basis_list):
@@ -1202,16 +1219,21 @@ class BootstrapSystemComplex:
                 # grab the index of the operator O_1^dag O_2
                 index_map = self.operator_dict[op_str1 + op_str2]
 
+                # M[i,j] = sign * <Tr(op_str1 + op_str2)>
+                #         = sign * (vR[index_map] + i * vI[index_map])
+                # vR and vI are stored in the first and second halves of null_space_matrix
                 for k in range(null_space_matrix.shape[1]):
-                    x = sign * null_space_matrix[index_map, k]
+                    x = sign * (
+                        null_space_matrix[index_map, k]
+                        + 1j * null_space_matrix[index_map + n_complex, k]
+                    )
                     if np.abs(x) > self.tol:
-                        # print(f"op1 = {op_str1[::-1]}, op2 = {op_str2}, op1* + op2 = {op_str1 + op_str2}, index = {index_map}, k = {k}, val={x}")
                         bootstrap_dict[(idx1, idx2, k)] = x
 
-        # map to a sparse array
+        # map to a (complex) dense array, then convert to sparse
         bootstrap_array = np.zeros(
             (self.bootstrap_matrix_dim, self.bootstrap_matrix_dim, self.param_dim_null),
-            dtype=np.float64,
+            dtype=np.complex128,
         )
         for (i, j, k), value in bootstrap_dict.items():
             bootstrap_array[i, j, k] = value
@@ -1239,16 +1261,12 @@ class BootstrapSystemComplex:
             self.bootstrap_table_sparse.dot(param), (dim, dim)
         )
 
-        # verify that matrix is symmetric
-        # the general condition is that the matrix is Hermitian, but we have made it real
-        # NOTE: this property only holds when the reality constraints are imposed - only then
-        # do we have a relation b/w for example <tr(XP)> and <tr(XP)>.
-        if not np.allclose(
-            (bootstrap_matrix - bootstrap_matrix.T), np.zeros_like(bootstrap_matrix)
-        ):
-            violation = np.max((bootstrap_matrix - bootstrap_matrix.T))
+        # verify that matrix is Hermitian
+        # NOTE: this property only holds when the reality constraints are imposed
+        if not np.allclose(bootstrap_matrix, bootstrap_matrix.conj().T, atol=1e-10):
+            violation = np.max(np.abs(bootstrap_matrix - bootstrap_matrix.conj().T))
             raise ValueError(
-                f"Bootstrap matrix is not symmetric, violation = {violation}"
+                f"Bootstrap matrix is not Hermitian, violation = {violation}"
             )
 
         return bootstrap_matrix
