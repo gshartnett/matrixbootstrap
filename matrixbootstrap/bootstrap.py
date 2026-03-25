@@ -1,6 +1,10 @@
 import logging
 import os
 import pickle
+from abc import (
+    ABC,
+    abstractmethod,
+)
 from itertools import product
 from typing import Optional
 
@@ -30,9 +34,12 @@ from matrixbootstrap.linear_algebra import (
 logger = logging.getLogger(__name__)
 
 
-class BootstrapSystem:
+class BootstrapSystem(ABC):
     """
-    _summary_
+    Abstract base class for bootstrap systems.
+
+    Subclasses must implement the abstract methods to provide model-specific
+    behaviour (real vs. complex operator bases, reality constraints, etc.).
     """
 
     def __init__(
@@ -47,39 +54,106 @@ class BootstrapSystem:
         simplify_quadratic=True,
         structural_cache_path: Optional[str] = None,
         config_cache_path: Optional[str] = None,
+        verbose: bool = False,
+        fraction_operators_to_retain: float = 1.0,
     ):
         self.matrix_system = matrix_system
         self.hamiltonian = hamiltonian
         self.gauge_generator = gauge_generator
         self.max_degree_L = max_degree_L
         self.odd_degree_vanish = odd_degree_vanish
-        self.operator_list = self.generate_operators(2 * max_degree_L)
-        self.operator_dict = {op: idx for idx, op in enumerate(self.operator_list)}
-        self.conversion_vec = np.asarray(
-            [1 if len(op) % 2 == 0 else 1j for op in self.operator_list]
-        )
-        if 2 * self.max_degree_L < self.hamiltonian.max_degree:
-            raise ValueError("2 * max_degree_L must be >= max degree of Hamiltonian.")
-        self.param_dim = len(self.operator_dict)
         self.tol = tol
-        self.null_space_matrix = None
-        self.linear_constraints = None
-        self.quadratic_constraints = None
-        self.quadratic_constraints_numerical = None
-        self.bootstrap_table_sparse = None
         self.simplify_quadratic = simplify_quadratic
         self.symmetry_generators = symmetry_generators
         self.structural_cache_path = structural_cache_path
         self.config_cache_path = config_cache_path
+        self.verbose = verbose
+        self.fraction_operators_to_retain = fraction_operators_to_retain
+
+        # These are set to None and populated later
+        self.null_space_matrix = None
+        self.bootstrap_table_sparse = None
+        self.bootstrap_basis_list = None
+        self.bootstrap_matrix_dim = None
+        self.linear_constraints = None
+        self.quadratic_constraints = None
+        self.quadratic_constraints_numerical = None
+        self.param_dim_null = None
+
         if self.structural_cache_path is not None:
             os.makedirs(self.structural_cache_path, exist_ok=True)
         if self.config_cache_path is not None:
             os.makedirs(self.config_cache_path, exist_ok=True)
+
+        # Subclass-specific initialisation (sets operator_list, operator_dict, etc.)
+        self._init_subclass_vars()
+
         self._validate()
+
+    @abstractmethod
+    def _init_subclass_vars(self) -> None:
+        """
+        Subclass hook called at the end of __init__.
+
+        Must set at minimum: operator_list, operator_dict, bootstrap_basis_list,
+        bootstrap_matrix_dim, and any subclass-specific dimension attributes.
+        """
+
+    @abstractmethod
+    def generate_reality_constraints(self) -> list[SingleTraceOperator]:
+        """Generate reality constraints <O†> = <O>*."""
+
+    @abstractmethod
+    def single_trace_to_coefficient_vector(
+        self, st_operator: SingleTraceOperator, return_null_basis: bool = False
+    ) -> np.ndarray:
+        """Map a single-trace operator to its coefficient vector."""
+
+    @abstractmethod
+    def double_trace_to_coefficient_matrix(
+        self, dt_operator: DoubleTraceOperator
+    ) -> coo_matrix:
+        """Map a double-trace operator to its coefficient matrix."""
+
+    @abstractmethod
+    def build_linear_constraints(
+        self, additional_constraints: Optional[list[SingleTraceOperator]] = None
+    ) -> coo_matrix:
+        """Build and return the linear constraint matrix."""
+
+    @abstractmethod
+    def build_quadratic_constraints(self) -> dict[str, np.ndarray]:
+        """Build and store the quadratic constraints."""
+
+    @abstractmethod
+    def build_bootstrap_table(self) -> csr_matrix:
+        """Build and store the bootstrap table."""
+
+    @abstractmethod
+    def get_operator_expectation_value(
+        self, st_operator: SingleTraceOperator, param: np.ndarray
+    ) -> float:
+        """Return the expectation value of a single-trace operator."""
+
+    @abstractmethod
+    def _check_bootstrap_matrix_hermitian(
+        self, matrix: np.ndarray, atol: float
+    ) -> bool:
+        """Return True if the bootstrap matrix passes the Hermitian check."""
+
+    def build_augmented_bootstrap_table(self) -> np.ndarray:
+        """
+        Build the v-vector table for the factorization-block constraint.
+        Only supported by BootstrapSystemReal; raises NotImplementedError otherwise.
+        """
+        raise NotImplementedError(
+            "build_augmented_bootstrap_table is only supported for BootstrapSystemReal."
+        )
 
     def _validate(self):
         """
-        Check that the operator basis used in matrix_system is consistent with gauge and hamiltonian.
+        Check that the operator basis used in matrix_system is consistent
+        with gauge and hamiltonian.
         """
         if self.gauge_generator is not None:
             self.validate_operator(operator=self.gauge_generator)
@@ -100,85 +174,6 @@ class BootstrapSystem:
                     raise ValueError(
                         f"Invalid operator: constrains term {op_str} which is not in operator_basis."
                     )
-
-    def build_null_space_matrix(
-        self, additional_constraints: Optional[list[SingleTraceOperator]] = None
-    ) -> np.ndarray:
-        """
-        Builds the null space matrix, K_{ia}.
-
-        Note that K_{ia} K_{ib} = delta_{ab}.
-        """
-        linear_constraint_matrix = self.build_linear_constraints(additional_constraints)
-
-        logger.info(
-            "Building null space matrix: constraint matrix shape %s",
-            linear_constraint_matrix.shape,
-        )
-        self.null_space_matrix = get_null_space_sparse(linear_constraint_matrix)
-        self.param_dim_null = self.null_space_matrix.shape[1]
-        logger.info(
-            "Null space dimension (number of free parameters) = %d", self.param_dim_null
-        )
-
-        if self.config_cache_path is not None:
-            save_npz(
-                self.config_cache_path + "/null_space_matrix.npz",
-                self.null_space_matrix,
-            )
-
-    def generate_operators(self, max_degree: int) -> list[str]:
-        """
-        Generate the list of operators used in the bootstrap, i.e.
-            I, X, P, XX, XP, PX, PP, ...,
-        up to and including strings of max_degree degree.
-
-        Parameters
-        ----------
-        max_degree : int
-            Maximum degree of operators to consider.
-
-        Returns
-        -------
-        list[str]
-            A list of the operators.
-        """
-        operators = {
-            deg: [x for x in product(self.matrix_system.operator_basis, repeat=deg)]
-            for deg in range(0, max_degree + 1)
-        }
-        operator_list = [x for xs in operators.values() for x in xs]
-
-        # arrange list in blocks of even/odd degree, i.e.,
-        # operators_by_degree = {
-        #   0: [(), ('X', 'X'), ..., ]
-        #   1: [('X'), ('P'), ..., ]
-        # }
-        operators_by_degree = {}
-
-        def degree_func(x):
-            return len(x)
-
-        for op in operator_list:
-            degree = degree_func(op)
-            if degree not in operators_by_degree:
-                operators_by_degree[degree] = [op]
-            else:
-                operators_by_degree[degree].append(op)
-
-        # arrange the operators with degree <= L by degree mod 2
-        # for building the bootstrap matrix
-        bootstrap_basis_list = []
-        for deg, op_list in operators.items():
-            if deg % 2 == 0 and deg <= self.max_degree_L:
-                bootstrap_basis_list.extend(op_list)
-        for deg, op_list in operators.items():
-            if deg % 2 != 0 and deg <= self.max_degree_L:
-                bootstrap_basis_list.extend(op_list)
-        self.bootstrap_basis_list = bootstrap_basis_list
-        self.bootstrap_matrix_dim = len(bootstrap_basis_list)
-
-        return operator_list
 
     def load_structural_cache(self, path):
         """Load coupling-independent artifacts from the structural cache."""
@@ -236,92 +231,160 @@ class BootstrapSystem:
             ).copy()
             logger.info("  loaded bootstrap table")
 
-    def single_trace_to_coefficient_vector(
-        self, st_operator: SingleTraceOperator, return_null_basis: bool = False
+    def generate_operators(self, max_degree: int) -> list[str]:
+        """
+        Generate the list of operators used in the bootstrap, i.e.
+            I, X, P, XX, XP, PX, PP, ...,
+        up to and including strings of max_degree degree.
+
+        Parameters
+        ----------
+        max_degree : int
+            Maximum degree of operators to consider.
+
+        Returns
+        -------
+        list[str]
+            A list of the operators.
+        """
+        operators = {
+            deg: [x for x in product(self.matrix_system.operator_basis, repeat=deg)]
+            for deg in range(0, max_degree + 1)
+        }
+        operator_list = [x for xs in operators.values() for x in xs]
+
+        # arrange list in blocks of even/odd degree, i.e.,
+        # operators_by_degree = {
+        #   0: [(), ('X', 'X'), ..., ]
+        #   1: [('X'), ('P'), ..., ]
+        # }
+        operators_by_degree = {}
+
+        def degree_func(x):
+            return len(x)
+
+        for op in operator_list:
+            degree = degree_func(op)
+            if degree not in operators_by_degree:
+                operators_by_degree[degree] = [op]
+            else:
+                operators_by_degree[degree].append(op)
+
+        # arrange the operators with degree <= L by degree mod 2
+        # for building the bootstrap matrix
+        bootstrap_basis_list = []
+        for deg, op_list in operators.items():
+            if deg % 2 == 0 and deg <= self.max_degree_L:
+                bootstrap_basis_list.extend(op_list)
+        for deg, op_list in operators.items():
+            if deg % 2 != 0 and deg <= self.max_degree_L:
+                bootstrap_basis_list.extend(op_list)
+        self.bootstrap_basis_list = bootstrap_basis_list
+        self.bootstrap_matrix_dim = len(bootstrap_basis_list)
+
+        return operator_list
+
+    def build_null_space_matrix(
+        self, additional_constraints: Optional[list[SingleTraceOperator]] = None
     ) -> np.ndarray:
         """
-        Map a single trace operator to a vector of the coefficients, v_i.
-        Optionally returns the vector in the null basis, u_a = v_i K_{ia}
+        Builds the null space matrix, K_{ia}.
 
-        Parameters
-        ----------
-        st_operator : SingleTraceOperator
-            The operator
-
-        return_null_basis : bool, optional
-            Controls whether the vector is returned in the original basis or the null basis.
-            By default False.
-
-        Returns
-        -------
-        np.ndarray
-            The vector.
+        Note that K_{ia} K_{ib} = delta_{ab}.
         """
-        self.validate_operator(operator=st_operator)  # validate
-        vec = [0] * self.param_dim
-        for op, coeff in st_operator:
-            idx = self.operator_dict[op]
-            vec[idx] = coeff
-        vec = np.asarray(vec)
+        linear_constraint_matrix = self.build_linear_constraints(additional_constraints)
 
-        if not return_null_basis:
-            return vec
-
-        # TODO add note about this
-        vec = self.conversion_vec * vec
-
-        if np.all(vec.imag == 0):
-            return vec.real @ self.null_space_matrix
-        elif np.all(vec.real == 0):
-            return vec.imag @ self.null_space_matrix
-        else:
-            raise ValueError("Vector should be purely real or purely imaginary.")
-
-    def double_trace_to_coefficient_matrix(
-        self, dt_operator: DoubleTraceOperator
-    ) -> coo_matrix:
-        """
-        Use large-N factorization <tr(O1)tr(O2)> = <tr(O1)><tr(O2)> to
-        represent the double-trace operator as a quadratic expression
-        of single trace operators, sum_{ij} M_{ij} v_i v_j.
-
-        The matrix M is returned and stored as a COO matrix.
-
-        Parameters
-        ----------
-        dt_operator : DoubleTraceOperator
-            The double trace operator.
-
-        Returns
-        -------
-        coo_matrix
-            The matrix representation of the factorized double-trace operator.
-        """
-        index_value_dict = {}
-        for (op1, op2), coeff in dt_operator:
-            idx1, idx2 = self.operator_dict[op1], self.operator_dict[op2]
-
-            # the odd-degree operators are assumed to be purely imaginary
-            # the overall factor of i has been stripped off, but when
-            # the double trace operator involves terms like <X><X^3> we need
-            # to add back in the i^2 = -1 sign.
-            both_odd = (len(op1) % 2 == 1) and (len(op2) % 2 == 1)
-            sign = -1 if both_odd else 1
-
-            # symmetrize
-            index_value_dict[(idx1, idx2)] = (
-                index_value_dict.get((idx1, idx2), 0) + sign * coeff / 2
-            )
-            index_value_dict[(idx2, idx1)] = (
-                index_value_dict.get((idx2, idx1), 0) + sign * coeff / 2
-            )
-
-        mat = create_sparse_matrix_from_dict(
-            index_value_dict=index_value_dict,
-            matrix_shape=(len(self.operator_list), len(self.operator_list)),
+        logger.info(
+            "Building null space matrix: constraint matrix shape %s",
+            linear_constraint_matrix.shape,
+        )
+        self.null_space_matrix = get_null_space_sparse(linear_constraint_matrix)
+        self.param_dim_null = self.null_space_matrix.shape[1]
+        logger.info(
+            "Null space dimension (number of free parameters) = %d", self.param_dim_null
         )
 
-        return mat
+        if self.config_cache_path is not None:
+            save_npz(
+                self.config_cache_path + "/null_space_matrix.npz",
+                self.null_space_matrix,
+            )
+
+    def generate_hamiltonian_constraints(self) -> list[SingleTraceOperator]:
+        """
+        Generate the Hamiltonian constraints <[H,O]>=0 for O single trace.
+
+        Returns
+        -------
+        list[SingleTraceOperator]
+            The list of constraint terms.
+        """
+        constraints = []
+
+        for op_idx, op in enumerate(self.operator_list):
+            constraints.append(
+                self.matrix_system.single_trace_commutator(
+                    st_operator1=self.hamiltonian,
+                    st_operator2=SingleTraceOperator(data={op: 1}),
+                )
+            )
+            constraints.append(
+                self.matrix_system.single_trace_commutator(
+                    st_operator1=SingleTraceOperator(data={op: 1}),
+                    st_operator2=self.hamiltonian,
+                )
+            )
+
+            logger.debug(
+                "Generating Hamiltonian constraints: operator %d/%d",
+                op_idx + 1,
+                len(self.operator_list),
+            )
+
+        return self.clean_constraints(constraints)
+
+    def generate_gauge_constraints(self) -> list[SingleTraceOperator]:
+        """
+        Generate the Gauge constraints <tr(G O)>=0 for O a general matrix operator.
+        Because G has max degree 2, the gauge constraints for some operators will
+        involve operators outside the bootstrap system. These will be discarded.
+
+        Returns
+        -------
+        list[SingleTraceOperator]
+            The list of constraint terms.
+        """
+        if self.gauge_generator is None:
+            raise ValueError("Error, no gauge generator provided.")
+
+        constraints = []
+        for op_idx, op in enumerate(self.operator_list):
+            constraints.append(
+                (self.gauge_generator * MatrixOperator(data={op: 1})).trace()
+            )
+
+            logger.debug(
+                "Generating gauge constraints: operator %d/%d",
+                op_idx + 1,
+                len(self.operator_list),
+            )
+
+        return self.clean_constraints(constraints)
+
+    def generate_odd_degree_vanish_constraints(self) -> list[SingleTraceOperator]:
+        """
+        Generate the constraints that set all odd-degree basis operators to zero.
+
+        Returns
+        -------
+        list[SingleTraceOperator]
+            The constraints.
+        """
+        constraints = []
+        for op in self.operator_list:
+            if len(op) % 2 == 1:
+                constraints.append(SingleTraceOperator(data={op: 1}))
+        return constraints
 
     def generate_symmetry_constraints(self, tol=1e-10) -> list[SingleTraceOperator]:
         """
@@ -472,81 +535,93 @@ class BootstrapSystem:
 
         return self.clean_constraints(total_constraints)
 
-    def generate_hamiltonian_constraints(self) -> list[SingleTraceOperator]:
+    def clean_constraints(
+        self, constraints: list[SingleTraceOperator]
+    ) -> list[SingleTraceOperator]:
         """
-        Generate the Hamiltonian constraints <[H,O]>=0 for O single trace.
+        Remove constraints that involve operators outside the operator list.
+        Also remove empty constraints of the form 0=0.
+
+        Parameters
+        ----------
+        constraints : list[SingleTraceOperator]
+            The single trace constraints.
 
         Returns
         -------
         list[SingleTraceOperator]
-            The list of constraint terms.
+            The cleaned constraints.
         """
-        constraints = []
+        logger.debug("Cleaning constraints...")
 
-        for op_idx, op in enumerate(self.operator_list):
-            constraints.append(
-                self.matrix_system.single_trace_commutator(
-                    st_operator1=self.hamiltonian,
-                    st_operator2=SingleTraceOperator(data={op: 1}),
-                )
-            )
-            constraints.append(
-                self.matrix_system.single_trace_commutator(
-                    st_operator1=SingleTraceOperator(data={op: 1}),
-                    st_operator2=self.hamiltonian,
-                )
-            )
+        cleaned_constraints = []
 
-            logger.debug(
-                "Generating Hamiltonian constraints: operator %d/%d",
-                op_idx + 1,
-                len(self.operator_list),
-            )
+        # use a set to check membership as this operation is O(1) vs O(N) for lists
+        set_of_all_operators = set(self.operator_list)
+        for st_operator in constraints:
+            if (
+                all([op in set_of_all_operators for op in st_operator.data])
+                and not st_operator.is_zero()
+            ):
+                cleaned_constraints.append(st_operator)
+        return cleaned_constraints
 
-        return self.clean_constraints(constraints)
-
-    def generate_gauge_constraints(self) -> list[SingleTraceOperator]:
+    def get_bootstrap_matrix(self, param: np.ndarray, atol: float = 1e-8) -> np.ndarray:
         """
-        Generate the Gauge constraints <tr(G O)>=0 for O a general matrix operator.
-        Because G has max degree 2, the gauge constraints for some operators will
-        involve operators outside the bootstrap system. These will be discarded.
+        Build the bootstrap matrix for a given null parameter vector.
+
+        Parameters
+        ----------
+        param : np.ndarray
+            The parameter vector.
 
         Returns
         -------
-        list[SingleTraceOperator]
-            The list of constraint terms.
+        np.ndarray
+            The bootstrap matrix.
+
+        Raises
+        ------
+        ValueError
+            Raise an error if the bootstrap matrix is not Hermitian.
         """
-        if self.gauge_generator is None:
-            raise ValueError("Error, no gauge generator provided.")
+        dim = self.bootstrap_matrix_dim
+        if self.bootstrap_table_sparse is None:
+            self.buid_bootstrap_table()
 
-        constraints = []
-        for op_idx, op in enumerate(self.operator_list):
-            constraints.append(
-                (self.gauge_generator * MatrixOperator(data={op: 1})).trace()
-            )
+        bootstrap_matrix = np.reshape(
+            self.bootstrap_table_sparse.dot(param), (dim, dim)
+        )
 
-            logger.debug(
-                "Generating gauge constraints: operator %d/%d",
-                op_idx + 1,
-                len(self.operator_list),
-            )
+        # verify that matrix is Hermitian (hook allows subclasses to customise)
+        if not self._check_bootstrap_matrix_hermitian(bootstrap_matrix, atol):
+            raise ValueError(f"Bootstrap matrix is not symmetric for atol={atol:.2e}.")
 
-        return self.clean_constraints(constraints)
+        return bootstrap_matrix
 
-    def generate_odd_degree_vanish_constraints(self) -> list[SingleTraceOperator]:
-        """
-        Generate the constraints that set all odd-degree basis operators to zero.
 
-        Returns
-        -------
-        list[SingleTraceOperator]
-            The constraints.
-        """
-        constraints = []
-        for op in self.operator_list:
-            if len(op) % 2 == 1:
-                constraints.append(SingleTraceOperator(data={op: 1}))
-        return constraints
+class BootstrapSystemReal(BootstrapSystem):
+    """
+    Bootstrap system for real (Hermitian) operator bases.
+
+    This is the original BootstrapSystem renamed; all existing real-bootstrap
+    functionality lives here unchanged.
+    """
+
+    def _init_subclass_vars(self) -> None:
+        self.operator_list = self.generate_operators(2 * self.max_degree_L)
+        self.operator_dict = {op: idx for idx, op in enumerate(self.operator_list)}
+        self.conversion_vec = np.asarray(
+            [1 if len(op) % 2 == 0 else 1j for op in self.operator_list]
+        )
+        if 2 * self.max_degree_L < self.hamiltonian.max_degree:
+            raise ValueError("2 * max_degree_L must be >= max degree of Hamiltonian.")
+        self.param_dim = len(self.operator_dict)
+
+    def _check_bootstrap_matrix_hermitian(
+        self, matrix: np.ndarray, atol: float
+    ) -> bool:
+        return ishermitian(matrix, atol=atol)
 
     def generate_reality_constraints(self) -> list[SingleTraceOperator]:
         """
@@ -573,6 +648,93 @@ class BootstrapSystem:
                 sign = 1 if len(op) % 2 == 0 else -1
                 constraints.append(st_operator - sign * st_operator_dagger)
         return self.clean_constraints(constraints)
+
+    def single_trace_to_coefficient_vector(
+        self, st_operator: SingleTraceOperator, return_null_basis: bool = False
+    ) -> np.ndarray:
+        """
+        Map a single trace operator to a vector of the coefficients, v_i.
+        Optionally returns the vector in the null basis, u_a = v_i K_{ia}
+
+        Parameters
+        ----------
+        st_operator : SingleTraceOperator
+            The operator
+
+        return_null_basis : bool, optional
+            Controls whether the vector is returned in the original basis or the null basis.
+            By default False.
+
+        Returns
+        -------
+        np.ndarray
+            The vector.
+        """
+        self.validate_operator(operator=st_operator)  # validate
+        vec = [0] * self.param_dim
+        for op, coeff in st_operator:
+            idx = self.operator_dict[op]
+            vec[idx] = coeff
+        vec = np.asarray(vec)
+
+        if not return_null_basis:
+            return vec
+
+        # TODO add note about this
+        vec = self.conversion_vec * vec
+
+        if np.all(vec.imag == 0):
+            return vec.real @ self.null_space_matrix
+        elif np.all(vec.real == 0):
+            return vec.imag @ self.null_space_matrix
+        else:
+            raise ValueError("Vector should be purely real or purely imaginary.")
+
+    def double_trace_to_coefficient_matrix(
+        self, dt_operator: DoubleTraceOperator
+    ) -> coo_matrix:
+        """
+        Use large-N factorization <tr(O1)tr(O2)> = <tr(O1)><tr(O2)> to
+        represent the double-trace operator as a quadratic expression
+        of single trace operators, sum_{ij} M_{ij} v_i v_j.
+
+        The matrix M is returned and stored as a COO matrix.
+
+        Parameters
+        ----------
+        dt_operator : DoubleTraceOperator
+            The double trace operator.
+
+        Returns
+        -------
+        coo_matrix
+            The matrix representation of the factorized double-trace operator.
+        """
+        index_value_dict = {}
+        for (op1, op2), coeff in dt_operator:
+            idx1, idx2 = self.operator_dict[op1], self.operator_dict[op2]
+
+            # the odd-degree operators are assumed to be purely imaginary
+            # the overall factor of i has been stripped off, but when
+            # the double trace operator involves terms like <X><X^3> we need
+            # to add back in the i^2 = -1 sign.
+            both_odd = (len(op1) % 2 == 1) and (len(op2) % 2 == 1)
+            sign = -1 if both_odd else 1
+
+            # symmetrize
+            index_value_dict[(idx1, idx2)] = (
+                index_value_dict.get((idx1, idx2), 0) + sign * coeff / 2
+            )
+            index_value_dict[(idx2, idx1)] = (
+                index_value_dict.get((idx2, idx1), 0) + sign * coeff / 2
+            )
+
+        mat = create_sparse_matrix_from_dict(
+            index_value_dict=index_value_dict,
+            matrix_shape=(len(self.operator_list), len(self.operator_list)),
+        )
+
+        return mat
 
     def generate_cyclic_constraint(
         self, op: tuple
@@ -963,37 +1125,6 @@ class BootstrapSystem:
             "quadratic": quadratic_terms,
         }
 
-    def clean_constraints(
-        self, constraints: list[SingleTraceOperator]
-    ) -> list[SingleTraceOperator]:
-        """
-        Remove constraints that involve operators outside the operator list.
-        Also remove empty constraints of the form 0=0.
-
-        Parameters
-        ----------
-        constraints : list[SingleTraceOperator]
-            The single trace constraints.
-
-        Returns
-        -------
-        list[SingleTraceOperator]
-            The cleaned constraints.
-        """
-        logger.debug("Cleaning constraints...")
-
-        cleaned_constraints = []
-
-        # use a set to check membership as this operation is O(1) vs O(N) for lists
-        set_of_all_operators = set(self.operator_list)
-        for st_operator in constraints:
-            if (
-                all([op in set_of_all_operators for op in st_operator.data])
-                and not st_operator.is_zero()
-            ):
-                cleaned_constraints.append(st_operator)
-        return cleaned_constraints
-
     def build_bootstrap_table(self) -> csr_matrix:
         """
         Creates the bootstrap table.
@@ -1107,40 +1238,6 @@ class BootstrapSystem:
                 self.config_cache_path + "/bootstrap_table_sparse.npz",
                 self.bootstrap_table_sparse,
             )
-
-    def get_bootstrap_matrix(self, param: np.ndarray, atol: float = 1e-8) -> np.ndarray:
-        """
-        Build the bootstrap matrix for a given null parameter vector.
-
-        Parameters
-        ----------
-        param : np.ndarray
-            The parameter vector.
-
-        Returns
-        -------
-        np.ndarray
-            The bootstrap matrix.
-
-        Raises
-        ------
-        ValueError
-            Raise an error if the bootstrap matrix is not Hermitian.
-        """
-
-        dim = self.bootstrap_matrix_dim
-        if self.bootstrap_table_sparse is None:
-            self.buid_bootstrap_table()
-
-        bootstrap_matrix = np.reshape(
-            self.bootstrap_table_sparse.dot(param), (dim, dim)
-        )
-
-        # verify that matrix is Hermitian
-        if not ishermitian(bootstrap_matrix, atol=atol):
-            raise ValueError(f"Bootstrap matrix is not symmetric for atol={atol:.2e}.")
-
-        return bootstrap_matrix
 
     def build_augmented_bootstrap_table(self) -> np.ndarray:
         """

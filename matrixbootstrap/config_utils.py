@@ -8,7 +8,7 @@ import fire
 import yaml
 
 from matrixbootstrap.algebra import SingleTraceOperator
-from matrixbootstrap.bootstrap import BootstrapSystem
+from matrixbootstrap.bootstrap import BootstrapSystemReal
 from matrixbootstrap.bootstrap_complex import BootstrapSystemComplex
 from matrixbootstrap.models import (
     MiniBFSS,
@@ -31,7 +31,8 @@ _MODEL_CLASSES = {
 }
 
 _BOOTSTRAP_CLASSES = {
-    "BootstrapSystem": BootstrapSystem,
+    "BootstrapSystem": BootstrapSystemReal,
+    "BootstrapSystemReal": BootstrapSystemReal,
     "BootstrapSystemComplex": BootstrapSystemComplex,
 }
 

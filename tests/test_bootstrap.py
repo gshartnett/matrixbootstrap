@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from matrixbootstrap.bootstrap import BootstrapSystem
+from matrixbootstrap.bootstrap import BootstrapSystemReal
 from matrixbootstrap.bootstrap_complex import BootstrapSystemComplex
 from matrixbootstrap.models import OneMatrix
 
@@ -18,7 +18,7 @@ def one_matrix_bootstrap_L1():
     Cheap to build; used as a shared fixture across tests.
     """
     model = OneMatrix(couplings={"g2": 1.0, "g4": 0.0, "g6": 0.0})
-    return BootstrapSystem(
+    return BootstrapSystemReal(
         matrix_system=model.matrix_system,
         hamiltonian=model.hamiltonian,
         gauge_generator=model.gauge_generator,
@@ -40,14 +40,15 @@ def one_matrix_real_and_complex_L2():
     simplify_quadratic=False keeps build time short for tests.
     """
     model = OneMatrix(couplings={"g2": 1.0, "g4": 0.0, "g6": 0.0})
-    real_sys = BootstrapSystem(
+    real_sys = BootstrapSystemReal(
         matrix_system=model.matrix_system,
         hamiltonian=model.hamiltonian,
         gauge_generator=model.gauge_generator,
         max_degree_L=2,
         odd_degree_vanish=True,
         simplify_quadratic=False,
-        checkpoint_path=None,
+        structural_cache_path=None,
+        config_cache_path=None,
     )
     complex_sys = BootstrapSystemComplex(
         matrix_system=model.matrix_system,
@@ -56,7 +57,8 @@ def one_matrix_real_and_complex_L2():
         max_degree_L=2,
         odd_degree_vanish=True,
         simplify_quadratic=False,
-        checkpoint_path=None,
+        structural_cache_path=None,
+        config_cache_path=None,
     )
     return real_sys, complex_sys
 

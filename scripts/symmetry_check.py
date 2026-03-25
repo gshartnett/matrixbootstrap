@@ -11,7 +11,7 @@ import logging
 
 from sparseqr import qr
 
-from matrixbootstrap.bootstrap import BootstrapSystem
+from matrixbootstrap.bootstrap import BootstrapSystemReal
 from matrixbootstrap.linear_algebra import create_sparse_matrix_from_dict
 from matrixbootstrap.models import MiniBMN
 
@@ -20,7 +20,7 @@ logging.basicConfig(level=logging.INFO)
 d = 3
 L = 4
 model = MiniBMN(couplings={"nu": 1, "lambda": 1})
-bootstrap = BootstrapSystem(
+bootstrap = BootstrapSystemReal(
     matrix_system=model.matrix_system,
     hamiltonian=model.hamiltonian,
     gauge_generator=model.gauge_generator,
