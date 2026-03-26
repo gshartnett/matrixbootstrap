@@ -46,6 +46,7 @@ bootstrap_keys = [
     "symmetry_method",
     "impose_gauge_symmetry",
     "load_from_previously_computed",
+    "use_invariant_basis",
 ]
 
 optimization_keys_newton = [
@@ -152,6 +153,7 @@ def generate_bootstrap_config(
     load_from_previously_computed=False,
     impose_gauge_symmetry=True,
     symmetry_method="complete",
+    use_invariant_basis=False,
 ):
 
     bootstrap_config_dict = {
@@ -164,6 +166,7 @@ def generate_bootstrap_config(
         "symmetry_method": symmetry_method,
         "impose_gauge_symmetry": impose_gauge_symmetry,
         "load_from_previously_computed": load_from_previously_computed,
+        "use_invariant_basis": use_invariant_basis,
     }
 
     return bootstrap_config_dict
@@ -186,6 +189,9 @@ def _struct_hash(config_data: dict) -> str:
         "model_name": config_data["model"]["model name"],
         "bootstrap_class": config_data["model"]["bootstrap class"],
         "max_degree_L": config_data["bootstrap"]["max_degree_L"],
+        "use_invariant_basis": config_data["bootstrap"].get(
+            "use_invariant_basis", False
+        ),
     }
     content = json.dumps(structural, sort_keys=True)
     return hashlib.sha256(content.encode()).hexdigest()[:12]
@@ -406,8 +412,7 @@ def generate_config_bmn(config_dir, nu, lambd, optimization_method, **kwargs):
     config_data = {
         "model": {
             "model name": "MiniBMN",
-            # "bootstrap class": "BootstrapSystemComplex",
-            "bootstrap class": "BootstrapSystem",
+            "bootstrap class": "BootstrapSystemComplex",
             "couplings": {"nu": float(nu), "lambda": float(lambd)},
         },
         "bootstrap": bootstrap_config_dict,
@@ -450,7 +455,11 @@ def run_bootstrap_from_config(
     config_cache_path = f"cache/per_config/{config_filename}"
 
     # handle the imposition of global symmetries
-    if not config_bootstrap["impose_symmetries"]:
+    # Keep symmetry_generators when use_invariant_basis=True: they are needed to
+    # build the Cartan eigenbasis, after which _build_invariant_basis sets them to None.
+    if not config_bootstrap["impose_symmetries"] and not config_bootstrap.get(
+        "use_invariant_basis", False
+    ):
         model.symmetry_generators = None
 
     # handle the imposition of gauge symmetries
@@ -484,7 +493,28 @@ def run_bootstrap_from_config(
         symmetry_generators=model.symmetry_generators,
         structural_cache_path=structural_cache_path,
         config_cache_path=config_cache_path,
+        use_invariant_basis=config_bootstrap.get("use_invariant_basis", False),
     )
+
+    # When use_invariant_basis=True, operators have been transformed to the Cartan
+    # eigenbasis. Operators from model.operators_to_track are in the original basis and
+    # cannot be used directly — replace them with the already-transformed versions.
+    if config_bootstrap.get("use_invariant_basis", False):
+        if st_operator_to_minimize is not None:
+            st_operator_to_minimize = bootstrap.hamiltonian
+        if config_bootstrap["st_operators_evs_to_set"] is not None:
+            # Rebuild st_operator_inhomo_constraints using eigenbasis operators
+            st_operator_inhomo_constraints = [(SingleTraceOperator(data={(): 1}), 1)]
+            for key, value in config_bootstrap["st_operators_evs_to_set"].items():
+                if key == "energy":
+                    st_operator_inhomo_constraints.append(
+                        (bootstrap.hamiltonian, value)
+                    )
+                else:
+                    logger.warning(
+                        "use_invariant_basis=True: cannot map operator '%s' to eigenbasis; skipping.",
+                        key,
+                    )
 
     # load from cache: structural cache is always used; per-config cache is
     # used when load_from_previously_computed is set
@@ -513,14 +543,24 @@ def run_bootstrap_from_config(
         return
 
     # record select expectation values
-    expectation_values = {
-        name: float(
+    # When use_invariant_basis=True, operators_to_track are in the original basis
+    # and can't be evaluated directly; only record energy from bootstrap.hamiltonian.
+    if config_bootstrap.get("use_invariant_basis", False):
+        energy_ev = float(
             bootstrap.get_operator_expectation_value(
-                st_operator=st_operator, param=param
+                st_operator=bootstrap.hamiltonian, param=param
             ).real
         )
-        for name, st_operator in model.operators_to_track.items()
-    }
+        expectation_values = {"energy": energy_ev}
+    else:
+        expectation_values = {
+            name: float(
+                bootstrap.get_operator_expectation_value(
+                    st_operator=st_operator, param=param
+                ).real
+            )
+            for name, st_operator in model.operators_to_track.items()
+        }
 
     # save the results
     result = optimization_result | expectation_values
@@ -572,7 +612,9 @@ def _build_config_cache(config_filename, config_dir):
     model = _MODEL_CLASSES[config_model["model name"]](
         couplings=config_model["couplings"]
     )
-    if not config_bootstrap["impose_symmetries"]:
+    if not config_bootstrap["impose_symmetries"] and not config_bootstrap.get(
+        "use_invariant_basis", False
+    ):
         model.symmetry_generators = None
     if not config_bootstrap["impose_gauge_symmetry"]:
         model.gauge_generator = None
@@ -587,6 +629,7 @@ def _build_config_cache(config_filename, config_dir):
         symmetry_generators=model.symmetry_generators,
         structural_cache_path=structural_cache_path,
         config_cache_path=config_cache_path,
+        use_invariant_basis=config_bootstrap.get("use_invariant_basis", False),
     )
 
     # load structural cache (cyclic constraints) if available

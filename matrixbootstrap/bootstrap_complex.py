@@ -40,6 +40,13 @@ class BootstrapSystemComplex(BootstrapSystem):
     # ------------------------------------------------------------------
 
     def _init_subclass_vars(self) -> None:
+        self._eig_charge_list = None  # set by _build_invariant_basis if used
+        if self.use_invariant_basis:
+            if self.symmetry_generators is None:
+                raise ValueError(
+                    "use_invariant_basis=True requires symmetry_generators to be provided."
+                )
+            self._build_invariant_basis()
         self.operator_list = self.generate_operators_truncated(
             L=self.max_degree_L,
             fraction_operators_to_retain=self.fraction_operators_to_retain,
@@ -49,6 +56,176 @@ class BootstrapSystemComplex(BootstrapSystem):
             raise ValueError("2 * max_degree_L must be >= max degree of Hamiltonian.")
         self.param_dim_complex = len(self.operator_dict)
         self.param_dim_real = 2 * len(self.operator_dict)
+
+    def _build_invariant_basis(self) -> None:
+        """
+        Transform the system to the Cartan eigenbasis of the last symmetry generator,
+        keeping only the charge-0 invariant subspace.
+
+        After this call:
+          - self.matrix_system is replaced with the eigenbasis MatrixSystem
+          - self.hamiltonian is expanded in the eigenbasis
+          - self.gauge_generator is expanded in the eigenbasis
+          - self.symmetry_generators is set to None (constraints are trivially satisfied)
+          - self._eig_charge_list holds integer charges for each eigenbasis element
+        """
+        from itertools import product as iproduct
+
+        from matrixbootstrap.algebra import MatrixSystem
+
+        orig_basis = self.matrix_system.operator_basis
+        orig_herm = self.matrix_system.hermitian_dict
+        orig_comm = self.matrix_system.commutation_rules
+        n = len(orig_basis)
+
+        # ---- 1. Build M matrix: action of Cartan generator on single operators ----
+        # Use the last symmetry generator (L_z for SO(3))
+        cartan_gen = self.symmetry_generators[-1]
+        M = np.zeros((n, n), dtype=np.complex128)
+        for i, op_name in enumerate(orig_basis):
+            comm = self.matrix_system.single_trace_commutator(
+                cartan_gen, SingleTraceOperator(data={(op_name,): 1})
+            )
+            for op_tuple, coeff in comm:
+                if len(op_tuple) == 1:
+                    j = orig_basis.index(op_tuple[0])
+                    M[j, i] = coeff
+
+        # ---- 2. Eigendecompose M ----
+        eigenvalues, V_cols = np.linalg.eig(M)
+        # Charges: eigenvalue = i * charge (the U(1) generator is i*M)
+        charges = np.round(np.real(eigenvalues / 1j)).astype(int)
+
+        # Sort by descending charge so positive charges come first
+        order = np.argsort(-charges)
+        charges = charges[order]
+        V_cols = V_cols[:, order]  # V[i, k] = coeff of eig_k in orig_basis[i]
+        V_inv = np.linalg.inv(V_cols)  # V_inv[k, i] = coeff of orig_basis[i] in eig_k
+
+        eig_names = [f"eig_{k}" for k in range(n)]
+        self._eig_charge_list = charges.tolist()
+        logger.info("Invariant basis: eigenbasis charges = %s", self._eig_charge_list)
+
+        # ---- 3. Commutation rules in eigenbasis ----
+        # [eig_a, eig_b] = sum_{i,j} V_inv[a,i] * V_inv[b,j] * orig_comm[(i,j)]
+        # Must include ALL pairs (including zeros) since algebra.py does direct dict lookup.
+        eig_comm_full = {}
+        for a, name_a in enumerate(eig_names):
+            for b, name_b in enumerate(eig_names):
+                val = sum(
+                    V_inv[a, i]
+                    * V_inv[b, j]
+                    * orig_comm.get((orig_basis[i], orig_basis[j]), 0)
+                    for i in range(n)
+                    for j in range(n)
+                )
+                val = complex(val)
+                eig_comm_full[(name_a, name_b)] = val if abs(val) > 1e-12 else 0
+
+        # ---- 4. Hermitian dict and conjugate map ----
+        # Determine each eig_k's type by its dominant original basis element
+        eig_hermitian_dict = {}
+        for k, name_k in enumerate(eig_names):
+            max_idx = int(np.argmax(np.abs(V_inv[k])))
+            eig_hermitian_dict[name_k] = orig_herm[orig_basis[max_idx]]
+
+        # Conjugate map: eig_k† (ignoring sign) is the eig_l with charge = -charge_k
+        # and whose row in V_inv is proportional to conj(V_inv[k]) * sign_vec
+        sign_vec = np.array([1.0 if orig_herm[op] else -1.0 for op in orig_basis])
+        conj_map = {}
+        for k, name_k in enumerate(eig_names):
+            conj_row = np.conj(V_inv[k]) * sign_vec
+            best_l, best_overlap = 0, -1.0
+            for l_idx, name_l in enumerate(eig_names):
+                norm = np.linalg.norm(V_inv[l_idx]) * np.linalg.norm(conj_row)
+                if norm < 1e-14:
+                    continue
+                overlap = abs(np.dot(conj_row, np.conj(V_inv[l_idx]))) / norm
+                if overlap > best_overlap:
+                    best_overlap = overlap
+                    best_l = l_idx
+            conj_map[name_k] = eig_names[best_l]
+
+        # ---- 4b. Compute per-operator conjugation phases ----
+        # eig_k† = phase_k * eig_{conj_map[k]}
+        # From: conj(V_inv[k]) * sign_vec = phase_k * V_inv[m]
+        # where sign_vec[i] = +1 if orig Hermitian, -1 if anti-Hermitian
+        conjugate_phase_map = {}
+        for k, name_k in enumerate(eig_names):
+            m = eig_names.index(conj_map[name_k])
+            conj_row = np.conj(V_inv[k]) * sign_vec  # = phase_k * V_inv[m]
+            norm_m_sq = float(np.real(np.dot(V_inv[m], np.conj(V_inv[m]))))
+            if norm_m_sq > 1e-14:
+                phase_k = np.dot(conj_row, np.conj(V_inv[m])) / norm_m_sq
+            else:
+                phase_k = 1.0 + 0j
+            conjugate_phase_map[name_k] = complex(
+                np.round(phase_k.real, 10) + 1j * np.round(phase_k.imag, 10)
+            )
+
+        # ---- 5. Build new MatrixSystem ----
+        eig_matrix_system = MatrixSystem(
+            operator_basis=eig_names,
+            commutation_rules_concise={},
+            hermitian_dict=eig_hermitian_dict,
+            conjugate_map=conj_map,
+            precomputed_commutation_rules=eig_comm_full,
+            conjugate_phase_map=conjugate_phase_map,
+        )
+
+        # ---- 6. Expand operators in eigenbasis ----
+        def expand_op_tuple(op_tuple):
+            """Expand a tuple of original-basis names into eigenbasis (name → complex coeff)."""
+            indices = [orig_basis.index(name) for name in op_tuple]
+            result = {}
+            for ks in iproduct(range(n), repeat=len(indices)):
+                coeff = 1.0 + 0j
+                for orig_idx, k in zip(indices, ks):
+                    coeff *= V_cols[orig_idx, k]
+                if abs(coeff) > 1e-14:
+                    new_tuple = tuple(eig_names[k] for k in ks)
+                    result[new_tuple] = result.get(new_tuple, 0) + coeff
+            return {k: v for k, v in result.items() if abs(v) > 1e-14}
+
+        # Transform Hamiltonian
+        new_ham_data = {}
+        for op_tuple, coeff in self.hamiltonian:
+            if len(op_tuple) == 0:
+                new_ham_data[()] = new_ham_data.get((), 0) + coeff
+            else:
+                for eig_tuple, c in expand_op_tuple(op_tuple).items():
+                    new_ham_data[eig_tuple] = new_ham_data.get(eig_tuple, 0) + coeff * c
+        new_ham_data = {k: v for k, v in new_ham_data.items() if abs(v) > 1e-14}
+
+        # Transform gauge generator
+        from matrixbootstrap.algebra import MatrixOperator
+
+        new_gauge_data = {}
+        for op_tuple, coeff in self.gauge_generator:
+            if len(op_tuple) == 0:
+                new_gauge_data[()] = new_gauge_data.get((), 0) + coeff
+            else:
+                for eig_tuple, c in expand_op_tuple(op_tuple).items():
+                    new_gauge_data[eig_tuple] = (
+                        new_gauge_data.get(eig_tuple, 0) + coeff * c
+                    )
+        new_gauge_data = {k: v for k, v in new_gauge_data.items() if abs(v) > 1e-14}
+
+        self.matrix_system = eig_matrix_system
+        self.hamiltonian = SingleTraceOperator(data=new_ham_data)
+        self.gauge_generator = MatrixOperator(data=new_gauge_data)
+        # Symmetry constraints are trivially satisfied in the invariant (charge-0) subspace:
+        # L_z: charge-0 operators have zero L_z charge sum, so [L_z, O]=0 trivially.
+        # L_x, L_y: their filtered projections onto the charge-0 sector over-constrain
+        #   the truncated system (driving h_null → 0), so we skip them here.
+        # NOTE: the correct approach for the invariant basis requires including
+        #   ALL charge-sector bootstrap blocks as separate PSD constraints (not just
+        #   the charge-0 block), which is a multi-block SDP not yet implemented.
+        self.symmetry_generators = None
+        logger.info(
+            "Invariant basis built: %d eigenbasis operators, symmetry constraints disabled",
+            n,
+        )
 
     # ------------------------------------------------------------------
     # Abstract method implementations
@@ -111,7 +288,9 @@ class BootstrapSystemComplex(BootstrapSystem):
         if self.null_space_matrix is None:
             raise ValueError("Error, must first build null space.")
 
-        vec = np.concatenate((vec, vec))
+        # Real part of <H> = Re(h)·vR - Im(h)·vI  →  coefficient vector [Re(h), -Im(h)]
+        # (same convention as build_quadratic_constraints lines 495-500)
+        vec = np.concatenate((vec.real, -vec.imag))
         return vec @ self.null_space_matrix
 
     def double_trace_to_coefficient_matrix(self, dt_operator: DoubleTraceOperator):
@@ -235,38 +414,73 @@ class BootstrapSystemComplex(BootstrapSystem):
         # Non-palindrome case: vR[S] - sign_S*vR[rev(S)] = 0, vI[S] + sign_S*vI[rev(S)] = 0
         for op_str, op_idx in self.operator_dict.items():
 
-            op_str_reversed = op_str[::-1]
+            op_str_reversed = self.matrix_system.hermitian_conjugate_tuple(op_str)
             op_reversed_idx = self.operator_dict[op_str_reversed]
 
-            num_antihermitian = sum(
-                1 for term in op_str if not self.matrix_system.hermitian_dict[term]
-            )
-            sign_S = (-1) ** num_antihermitian
+            # Compute the conjugation sign for the operator product.
+            # If conjugate_phase_map is available (eigenbasis), each element eig_k has
+            # a per-operator phase: eig_k† = phase_k * eig_{conj[k]}.
+            # The total sign of (O_1...O_n)† = prod(phase_k) * rev_conj_op.
+            # For the original basis (no eigenbasis), fall back to (-1)^num_antihermitian.
+            if self.matrix_system.conjugate_phase_map is not None:
+                sign_S_complex = complex(
+                    np.prod(
+                        [
+                            self.matrix_system.conjugate_phase_map.get(s, 1.0 + 0j)
+                            for s in op_str
+                        ]
+                    )
+                )
+            else:
+                num_antihermitian = sum(
+                    1 for term in op_str if not self.matrix_system.hermitian_dict[term]
+                )
+                sign_S_complex = complex((-1) ** num_antihermitian)
+
+            # Round to nearest root of unity (±1 or ±i)
+            sign_re = int(np.round(sign_S_complex.real))
+            sign_im = int(np.round(sign_S_complex.imag))
+            n_dim = self.param_dim_complex  # shorthand
 
             # palindrome case
             if op_reversed_idx == op_idx:
-                if sign_S == 1:
-                    # vI[S] = 0
-                    index_value_dict[
-                        (constraint_idx, op_idx + self.param_dim_complex)
-                    ] = 1
-                else:
-                    # vR[S] = 0
+                # (1-a)*vR + b*vI = 0  where sign = a + ib
+                a, b = sign_re, sign_im
+                # For a=+1, b=0: 0*vR + 0*vI = trivial and 2*vI = 0 → vI = 0
+                # For a=-1, b=0: 2*vR = 0 and 0*vI = trivial → vR = 0
+                # For a=0, b=±1: vR ± vI = 0
+                if sign_re == 1 and sign_im == 0:
+                    # Hermitian: vI[S] = 0
+                    index_value_dict[(constraint_idx, op_idx + n_dim)] = 1
+                elif sign_re == -1 and sign_im == 0:
+                    # Anti-Hermitian: vR[S] = 0
                     index_value_dict[(constraint_idx, op_idx)] = 1
+                else:
+                    # Complex phase (e.g. ±i): vR[S] + b*vI[S] = 0  (b = ±1)
+                    index_value_dict[(constraint_idx, op_idx)] = 1
+                    index_value_dict[(constraint_idx, op_idx + n_dim)] = b
                 constraint_idx += 1
 
             # non-palindrome case
             else:
-                # real part: vR[S] - sign_S * vR[rev(S)] = 0
+                # Constraint: <S>* = sign_S * <rev(S)>
+                # Re(S) = a*Re(rev) - b*Im(rev)  →  vR[S] - a*vR[rev] + b*vI[rev] = 0
+                # Im(S) = -b*Re(rev) - a*Im(rev)  →  vI[S] + b*vR[rev] + a*vI[rev] = 0
+                a, b = sign_re, sign_im
+                # real constraint
+                entry_vR = index_value_dict.get((constraint_idx, op_idx), 0)
                 index_value_dict[(constraint_idx, op_idx)] = 1
-                index_value_dict[(constraint_idx, op_reversed_idx)] = -sign_S
+                if a != 0:
+                    index_value_dict[(constraint_idx, op_reversed_idx)] = -a
+                if b != 0:
+                    index_value_dict[(constraint_idx, op_reversed_idx + n_dim)] = b
                 constraint_idx += 1
-
-                # imaginary part: vI[S] + sign_S * vI[rev(S)] = 0
-                index_value_dict[(constraint_idx, op_idx + self.param_dim_complex)] = 1
-                index_value_dict[
-                    (constraint_idx, op_reversed_idx + self.param_dim_complex)
-                ] = sign_S
+                # imaginary constraint
+                index_value_dict[(constraint_idx, op_idx + n_dim)] = 1
+                if b != 0:
+                    index_value_dict[(constraint_idx, op_reversed_idx)] = b
+                if a != 0:
+                    index_value_dict[(constraint_idx, op_reversed_idx + n_dim)] = a
                 constraint_idx += 1
 
         # assemble the constraint matrix
@@ -402,8 +616,6 @@ class BootstrapSystemComplex(BootstrapSystem):
                     quadratic_terms.append(QI)
 
         logger.info(f"len(quadratic_terms) = {len(quadratic_terms)}")
-        if len(quadratic_terms) == 0:
-            raise ValueError
 
         if self.simplify_quadratic and len(additional_constraints) > 0:
             logger.info(
@@ -411,6 +623,22 @@ class BootstrapSystemComplex(BootstrapSystem):
             )
             self.build_null_space_matrix(additional_constraints=additional_constraints)
             return self.build_quadratic_constraints()
+
+        if len(quadratic_terms) == 0:
+            # All quadratic constraints were absorbed into the null space; use empty matrices.
+            logger.info(
+                "No residual quadratic constraints after simplification; using empty constraint matrices."
+            )
+            d = self.param_dim_null
+            from scipy.sparse import csr_matrix as _csr
+
+            empty_q = _csr((0, d**2), dtype=np.float64)
+            empty_l = _csr((0, d), dtype=np.float64)
+            self.quadratic_constraints_numerical = {
+                "linear": empty_l,
+                "quadratic": empty_q,
+            }
+            return
 
         # map to sparse matrices
         quadratic_terms = vstack(quadratic_terms)
@@ -512,26 +740,64 @@ class BootstrapSystemComplex(BootstrapSystem):
         logger.info("Building the bootstrap table...")
         if self.null_space_matrix is None:
             raise ValueError("Error, null space matrix has not yet been built.")
+
+        self.bootstrap_table_sparse = self._build_table_for_basis(
+            self.bootstrap_basis_list
+        )
+
+        # For the invariant (charge-0) basis, also build bootstrap tables for each
+        # non-zero charge sector.  Each charge-q block provides PSD constraints that
+        # couple different charge-0 expectation values, bounding the energy from below.
+        charge_sector_bases = getattr(self, "_charge_sector_bootstrap_bases", None)
+        if charge_sector_bases:
+            self.extra_bootstrap_tables = {
+                q: self._build_table_for_basis(basis)
+                for q, basis in sorted(charge_sector_bases.items())
+            }
+            logger.info(
+                "Built extra bootstrap tables for charge sectors: %s",
+                sorted(self.extra_bootstrap_tables.keys()),
+            )
+
+        if self.config_cache_path is not None:
+            save_npz(
+                self.config_cache_path + "/bootstrap_table_sparse.npz",
+                self.bootstrap_table_sparse,
+            )
+
+    def _build_table_for_basis(self, basis_list) -> "csr_matrix":
+        """Build a bootstrap table for an arbitrary list of bootstrap basis operators.
+
+        Returns a sparse matrix of shape (n^2, param_dim_null) where n = len(basis_list).
+        The entries encode M_{ij} = <O_i† O_j> as a linear combination of free parameters.
+        """
         null_space_matrix = self.null_space_matrix
         n_complex = self.param_dim_complex
+        n = len(basis_list)
 
         bootstrap_dict = {}
-        for idx1, op_str1 in enumerate(self.bootstrap_basis_list):
-            op_str1 = op_str1[::-1]  # take the h.c. by reversing the elements
-            for idx2, op_str2 in enumerate(self.bootstrap_basis_list):
-
-                # tally up number of anti-hermitian operators, and add (-1) factor if odd
+        for idx1, op_str1 in enumerate(basis_list):
+            # phase for O_i† = phase * conj_tuple(O_i)
+            if self.matrix_system.conjugate_phase_map is not None:
+                sign = complex(
+                    np.prod(
+                        [
+                            self.matrix_system.conjugate_phase_map.get(s, 1.0 + 0j)
+                            for s in op_str1
+                        ]
+                    )
+                )
+            else:
                 num_antihermitian_ops = sum(
                     [not self.matrix_system.hermitian_dict[term] for term in op_str1]
                 )
-                sign = (-1) ** num_antihermitian_ops
-
-                # grab the index of the operator O_1^dag O_2
-                index_map = self.operator_dict[op_str1 + op_str2]
-
-                # M[i,j] = sign * <Tr(op_str1 + op_str2)>
-                #         = sign * (vR[index_map] + i * vI[index_map])
-                # vR and vI are stored in the first and second halves of null_space_matrix
+                sign = complex((-1) ** num_antihermitian_ops)
+            op_str1_dag = self.matrix_system.hermitian_conjugate_tuple(op_str1)
+            for idx2, op_str2 in enumerate(basis_list):
+                product_key = op_str1_dag + op_str2
+                if product_key not in self.operator_dict:
+                    continue  # degree > 2L, skip
+                index_map = self.operator_dict[product_key]
                 for k in range(null_space_matrix.shape[1]):
                     x = sign * (
                         null_space_matrix[index_map, k]
@@ -540,26 +806,11 @@ class BootstrapSystemComplex(BootstrapSystem):
                     if np.abs(x) > self.tol:
                         bootstrap_dict[(idx1, idx2, k)] = x
 
-        # map to a (complex) dense array, then convert to sparse
-        bootstrap_array = np.zeros(
-            (self.bootstrap_matrix_dim, self.bootstrap_matrix_dim, self.param_dim_null),
-            dtype=np.complex128,
-        )
+        bootstrap_array = np.zeros((n, n, self.param_dim_null), dtype=np.complex128)
         for (i, j, k), value in bootstrap_dict.items():
             bootstrap_array[i, j, k] = value
 
-        self.bootstrap_table_sparse = csr_matrix(
-            bootstrap_array.reshape(
-                bootstrap_array.shape[0] * bootstrap_array.shape[1],
-                bootstrap_array.shape[2],
-            )
-        )
-
-        if self.config_cache_path is not None:
-            save_npz(
-                self.config_cache_path + "/bootstrap_table_sparse.npz",
-                self.bootstrap_table_sparse,
-            )
+        return csr_matrix(bootstrap_array.reshape(n * n, self.param_dim_null))
 
     def get_operator_expectation_value(
         self, st_operator: SingleTraceOperator, param: np.ndarray
@@ -591,15 +842,53 @@ class BootstrapSystemComplex(BootstrapSystem):
         ]
         logger.info(f"Number of operators with length <= {L}: {len(operators)}")
 
+        # If using invariant basis, filter to charge-0 operators only;
+        # also store bootstrap bases for non-zero charge sectors (for multi-block PSD).
+        if self._eig_charge_list is not None:
+            charge_map = {
+                name: self._eig_charge_list[i]
+                for i, name in enumerate(self.matrix_system.operator_basis)
+            }
+            all_ops_up_to_L = operators  # save before filtering
+            operators = [
+                op for op in all_ops_up_to_L if sum(charge_map[s] for s in op) == 0
+            ]
+            logger.info(
+                f"Number of charge-0 operators with length <= {L}: {len(operators)}"
+            )
+            # Store bootstrap bases for each non-zero charge sector.
+            # Iterate over ALL charges that appear among the truncated operators,
+            # not just the single-operator charges in _eig_charge_list (which would
+            # miss e.g. charge ±2 from pairs of charge ±1 operators).
+            all_charges = set(sum(charge_map[s] for s in op) for op in all_ops_up_to_L)
+            self._charge_sector_bootstrap_bases = {}
+            for q in all_charges:
+                if q == 0:
+                    continue
+                ops_q = [
+                    op for op in all_ops_up_to_L if sum(charge_map[s] for s in op) == q
+                ]
+                if ops_q:
+                    self._charge_sector_bootstrap_bases[q] = ops_q
+            logger.info(
+                "Invariant basis charge sectors: %s (sizes: %s)",
+                sorted(self._charge_sector_bootstrap_bases.keys()),
+                [
+                    len(v)
+                    for _, v in sorted(self._charge_sector_bootstrap_bases.items())
+                ],
+            )
+
         # truncate the set of operators considered
         if fraction_operators_to_retain < 1.0:
 
             # for reference find the number of operators in the multiplication table if we had not done the truncation
             untruncated_number_of_operators = len(
-                list(
+                sorted(
                     set(
                         [
-                            op_str1[::-1] + op_str2
+                            self.matrix_system.hermitian_conjugate_tuple(op_str1)
+                            + op_str2
                             for op_str1 in operators
                             for op_str2 in operators
                         ]
@@ -613,7 +902,8 @@ class BootstrapSystemComplex(BootstrapSystem):
             operators = [
                 op_str
                 for op_str in operators_retain
-                if op_str[::-1] in operators_retain
+                if self.matrix_system.hermitian_conjugate_tuple(op_str)
+                in operators_retain
             ]
 
             # add back any conjugates
@@ -622,15 +912,42 @@ class BootstrapSystemComplex(BootstrapSystem):
             )
 
         # generate all matrices appearing in the LxL multiplication table
-        operator_list = list(
+        # use sorted() for deterministic ordering across processes (fixes cache hash mismatch)
+        operator_list_table = sorted(
             set(
                 [
-                    op_str1[::-1] + op_str2
+                    self.matrix_system.hermitian_conjugate_tuple(op_str1) + op_str2
                     for op_str1 in operators
                     for op_str2 in operators
                 ]
             )
         )
+
+        # When using invariant basis, the multiplication table misses charge-0 operators
+        # whose first element has nonzero charge (e.g. ('eig_+','eig_0','eig_-')).
+        # Include ALL charge-0 operators up to degree 2L to ensure completeness.
+        if self._eig_charge_list is not None:
+            basis = self.matrix_system.operator_basis
+            charge_map = {
+                name: self._eig_charge_list[i] for i, name in enumerate(basis)
+            }
+            all_charge0_up_to_2L = sorted(
+                set(
+                    op
+                    for deg in range(0, 2 * L + 1)
+                    for op in product(basis, repeat=deg)
+                    if sum(charge_map[s] for s in op) == 0
+                )
+            )
+            operator_list = sorted(set(operator_list_table) | set(all_charge0_up_to_2L))
+            logger.info(
+                "Invariant basis: operator_list expanded from %d (table) to %d (all charge-0 up to degree %d)",
+                len(operator_list_table),
+                len(operator_list),
+                2 * L,
+            )
+        else:
+            operator_list = operator_list_table
 
         if fraction_operators_to_retain < 1.0:
             logger.info(
@@ -864,9 +1181,9 @@ class BootstrapSystemComplex(BootstrapSystem):
         linear_constraints.extend(cyclic_linear)
 
         # NOTE pretty sure this is not necessary
-        linear_constraints.extend(
-            [self.matrix_system.hermitian_conjugate(op) for op in linear_constraints]
-        )
+        # linear_constraints.extend(
+        #     [self.matrix_system.hermitian_conjugate(op) for op in linear_constraints]
+        # )
 
         # save the constraints
         if self.config_cache_path is not None:

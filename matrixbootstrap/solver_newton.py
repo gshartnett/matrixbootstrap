@@ -241,6 +241,7 @@ def sdp_minimize_null(
     cvxpy_solver: str = "SCS",
     use_factorization_block: bool = False,
     factorization_v_table: Optional[np.ndarray] = None,
+    extra_bootstrap_tables: Optional[dict] = None,
 ) -> tuple[bool, str, np.ndarray]:
     """
     Performs the following SDP minimization over the vector variable x:
@@ -393,6 +394,25 @@ def sdp_minimize_null(
             ]
         )
         constraints.append(M_hat >> 0)
+
+    # Extra PSD blocks for non-zero charge sectors (invariant basis only).
+    # Each charge-q block has entries that are charge-0 expectation values, so
+    # it constrains the same free parameters but provides additional PSD bounds.
+    if extra_bootstrap_tables:
+        for q, table_q in extra_bootstrap_tables.items():
+            n_q = int(np.sqrt(table_q.shape[0]))
+            if np.max(np.abs(table_q.imag)) > 1e-10:
+                table_q_real = table_q.real.astype(np.float64)
+                table_q_imag = table_q.imag.astype(np.float64)
+                M_q_real = cp.reshape(table_q_real @ param, (n_q, n_q), order="F")
+                M_q_imag = cp.reshape(table_q_imag @ param, (n_q, n_q), order="F")
+                M_q_block = cp.bmat([[M_q_real, -M_q_imag], [M_q_imag, M_q_real]])
+                constraints.append(M_q_block >> 0)
+            else:
+                M_q = cp.reshape(
+                    table_q.real.astype(np.float64) @ param, (n_q, n_q), order="F"
+                )
+                constraints.append(M_q >> 0)
 
     # the loss to minimize
     if linear_objective_vector is not None:
@@ -633,7 +653,7 @@ def solve_bootstrap(
                 if linear_objective_vector is not None
                 else float("nan")
             ),
-            np.max(np.abs(quad_cons_val)),
+            np.max(np.abs(quad_cons_val)) if quad_cons_val.size else 0.0,
             np.linalg.norm(param_array),
             radius,
             reg,
@@ -692,6 +712,9 @@ def solve_bootstrap(
                 cvxpy_solver=cvxpy_solver,
                 use_factorization_block=use_factorization_block,
                 factorization_v_table=factorization_v_table,
+                extra_bootstrap_tables=getattr(
+                    bootstrap, "extra_bootstrap_tables", None
+                ),
             )
 
         except Exception as e:
@@ -709,7 +732,9 @@ def solve_bootstrap(
         quad_cons_val = get_quadratic_constraint_vector(
             quadratic_constraints_numerical, param_array, compute_grad=False
         )
-        max_quad_constraint_violation = np.max(np.abs(quad_cons_val))
+        max_quad_constraint_violation = (
+            np.max(np.abs(quad_cons_val)) if quad_cons_val.size else 0.0
+        )
         quad_constraint_violation_norm = np.linalg.norm(quad_cons_val)
         optimization_result["max_quad_constraint_violation"] = (
             max_quad_constraint_violation
