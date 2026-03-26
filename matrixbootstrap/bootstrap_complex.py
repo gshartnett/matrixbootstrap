@@ -6,7 +6,6 @@ from typing import Optional
 import numpy as np
 import psutil
 from scipy.sparse import (
-    bmat,
     coo_matrix,
     csr_matrix,
     hstack,
@@ -300,6 +299,11 @@ class BootstrapSystemComplex(BootstrapSystem):
 
         index_value_dict = {}
         for (op1, op2), coeff in dt_operator:
+            if op1 not in self.operator_dict or op2 not in self.operator_dict:
+                # In the invariant basis, only charge-0 operators are in
+                # operator_dict.  Products involving non-zero-charge operators
+                # vanish by charge conservation and can be skipped.
+                continue
             idx1, idx2 = self.operator_dict[op1], self.operator_dict[op2]
 
             # symmetrize
@@ -310,9 +314,15 @@ class BootstrapSystemComplex(BootstrapSystem):
                 index_value_dict.get((idx2, idx1), 0) + coeff / 2
             )
 
+        n_ops = len(self.operator_list)
+        if not index_value_dict:
+            from scipy.sparse import csr_matrix as _csr
+
+            return _csr((n_ops, n_ops))
+
         mat = create_sparse_matrix_from_dict(
             index_value_dict=index_value_dict,
-            matrix_shape=(len(self.operator_list), len(self.operator_list)),
+            matrix_shape=(n_ops, n_ops),
         )
 
         return mat
@@ -524,6 +534,20 @@ class BootstrapSystemComplex(BootstrapSystem):
             self.build_null_space_matrix()
         null_space_matrix = self.null_space_matrix
 
+        # Pre-convert null space to dense once for fast BLAS row-indexing below.
+        # N_dense shape: (2*n_complex, n_null) where n_complex = param_dim_complex.
+        _N_dense = null_space_matrix.toarray()
+        _n_c = self.param_dim_complex
+
+        def _proj(row_idx, vals, col_idx):
+            """Compute -(N[row_idx,:].T @ diag(vals) @ N[col_idx,:]) via BLAS.
+            Each call is O(k * n_null^2) where k = len(vals), exploiting sparsity
+            of the quadratic constraint matrix instead of full sparse-sparse multiply.
+            """
+            if len(vals) == 0:
+                return np.zeros((self.param_dim_null, self.param_dim_null))
+            return -(_N_dense[row_idx, :].T @ (vals[:, None] * _N_dense[col_idx, :]))
+
         linear_terms = []
         quadratic_terms = []
 
@@ -563,28 +587,91 @@ class BootstrapSystemComplex(BootstrapSystem):
                 (linear_constraint_vector.imag, linear_constraint_vector.real)
             )
 
+            # Fast path: if the quadratic matrix is entirely zero (e.g. all
+            # double-trace operators projected out by charge conservation in the
+            # invariant basis), skip the expensive _proj / dense-matrix path.
+            if quadratic_matrix.nnz == 0:
+                linear_constraint_vectorR = linear_constraint_vectorR @ _N_dense
+                linear_constraint_vectorI = linear_constraint_vectorI @ _N_dense
+                if not self.simplify_quadratic:
+                    linear_is_zeroR = (
+                        np.max(np.abs(linear_constraint_vectorR)) < self.tol
+                    )
+                    linear_is_zeroI = (
+                        np.max(np.abs(linear_constraint_vectorI)) < self.tol
+                    )
+                    if not linear_is_zeroR:
+                        linear_terms.append(csr_matrix(linear_constraint_vectorR))
+                        quadratic_terms.append(csr_matrix((1, self.param_dim_null**2)))
+                    if not linear_is_zeroI:
+                        linear_terms.append(csr_matrix(linear_constraint_vectorI))
+                        quadratic_terms.append(csr_matrix((1, self.param_dim_null**2)))
+                else:
+                    if np.max(np.abs(linear_constraint_vectorR)) >= self.tol:
+                        additional_constraints.append(lhs.get_real_part())
+                    if np.max(np.abs(linear_constraint_vectorI)) >= self.tol:
+                        additional_constraints.append(lhs.get_imag_part())
+                continue
+
             # rewrite the quadratic constraints in terms of real variables
             # this entails two things:
             #   1. every constraint will become two (one real and one imaginary)
             #   2. each constraint will be naturally expressed as a (2d, 2d) matrix
             #      acting on the stacked parameter vector [vR, vI]
-            qR = quadratic_matrix.real
-            qI = quadratic_matrix.imag
+            qR_coo = quadratic_matrix.real.tocoo()
+            qI_coo = quadratic_matrix.imag.tocoo()
+            rR, cR, vR = qR_coo.row, qR_coo.col, qR_coo.data
+            rI, cI, vI = qI_coo.row, qI_coo.col, qI_coo.data
 
-            QR = bmat([[qR, -qI], [-qI, -qR]], format="coo")
-            QI = bmat([[qI, qR], [qR, -qI]], format="coo")
-
-            # transform to null basis
+            # transform to null basis (use dense N for BLAS speed)
             # the minus sign is important: (-RHS + LHS = 0)
-            linear_constraint_vectorR = linear_constraint_vectorR @ null_space_matrix
-            linear_constraint_vectorI = linear_constraint_vectorI @ null_space_matrix
+            linear_constraint_vectorR = linear_constraint_vectorR @ _N_dense
+            linear_constraint_vectorI = linear_constraint_vectorI @ _N_dense
 
-            QR = -null_space_matrix.T @ QR @ null_space_matrix
-            QI = -null_space_matrix.T @ QI @ null_space_matrix
+            # In the invariant-basis mode the quadratic part is already partially
+            # captured by the multi-block PSD structure.  The dense _proj matrices
+            # are n_null x n_null = O(param_dim_null^2) and cannot be stored in
+            # memory at L=3 (param_dim_null=3998 => 128 MB each, ~192 MB sparse).
+            # Skip the quadratic term and treat the constraint as linear-only.
+            if self.use_invariant_basis:
+                linear_is_zeroR = np.max(np.abs(linear_constraint_vectorR)) < self.tol
+                linear_is_zeroI = np.max(np.abs(linear_constraint_vectorI)) < self.tol
+                if not linear_is_zeroR:
+                    linear_terms.append(csr_matrix(linear_constraint_vectorR))
+                    quadratic_terms.append(csr_matrix((1, self.param_dim_null**2)))
+                if not linear_is_zeroI:
+                    linear_terms.append(csr_matrix(linear_constraint_vectorI))
+                    quadratic_terms.append(csr_matrix((1, self.param_dim_null**2)))
+                continue
 
-            # reshape the (d, d) matrices to (1, d^2) matrices
-            QR = QR.reshape((1, self.param_dim_null**2))
-            QI = QI.reshape((1, self.param_dim_null**2))
+            # Fast null-space projection of the (2n, 2n) block-quadratic matrices.
+            # QR = [[+qR, -qI], [-qI, -qR]]  =>  -N.T @ QR @ N:
+            #   (i,   j  ) = +vR : _proj(rR,      vR,  cR     )
+            #   (i+nc,j+nc) = -vR : _proj(rR+nc, -vR,  cR+nc  )
+            #   (i,   j+nc) = -vI : _proj(rI,    -vI,  cI+nc  )
+            #   (i+nc,j  ) = -vI : _proj(rI+nc,  -vI,  cI     )
+            QR = (
+                _proj(rR, vR, cR)
+                + _proj(rR + _n_c, -vR, cR + _n_c)
+                + _proj(rI, -vI, cI + _n_c)
+                + _proj(rI + _n_c, -vI, cI)
+            )
+
+            # QI = [[+qI, +qR], [+qR, -qI]]  =>  -N.T @ QI @ N:
+            #   (i,   j  ) = +vI : _proj(rI,      vI,  cI     )
+            #   (i+nc,j+nc) = -vI : _proj(rI+nc, -vI,  cI+nc  )
+            #   (i,   j+nc) = +vR : _proj(rR,     vR,  cR+nc  )
+            #   (i+nc,j  ) = +vR : _proj(rR+nc,   vR,  cR     )
+            QI = (
+                _proj(rI, vI, cI)
+                + _proj(rI + _n_c, -vI, cI + _n_c)
+                + _proj(rR, vR, cR + _n_c)
+                + _proj(rR + _n_c, vR, cR)
+            )
+
+            # reshape the (n_null, n_null) matrices to (1, n_null^2) sparse matrices
+            QR = csr_matrix(QR.reshape((1, self.param_dim_null**2)))
+            QI = csr_matrix(QI.reshape((1, self.param_dim_null**2)))
 
             # process the real and imaginary constraints separately
             # real part
@@ -775,7 +862,12 @@ class BootstrapSystemComplex(BootstrapSystem):
         n_complex = self.param_dim_complex
         n = len(basis_list)
 
-        bootstrap_dict = {}
+        # Convert to dense once for O(1) row access (~700MB at L=3, acceptable).
+        # Repeated N[row].todense() on a sparse matrix is ~16ms/call; direct
+        # array indexing is nanoseconds.
+        N_dense = null_space_matrix.toarray()
+
+        rows_out, cols_out, data_out = [], [], []
         for idx1, op_str1 in enumerate(basis_list):
             # phase for O_i† = phase * conj_tuple(O_i)
             if self.matrix_system.conjugate_phase_map is not None:
@@ -798,19 +890,25 @@ class BootstrapSystemComplex(BootstrapSystem):
                 if product_key not in self.operator_dict:
                     continue  # degree > 2L, skip
                 index_map = self.operator_dict[product_key]
-                for k in range(null_space_matrix.shape[1]):
-                    x = sign * (
-                        null_space_matrix[index_map, k]
-                        + 1j * null_space_matrix[index_map + n_complex, k]
-                    )
-                    if np.abs(x) > self.tol:
-                        bootstrap_dict[(idx1, idx2, k)] = x
+                x_vec = sign * (
+                    N_dense[index_map] + 1j * N_dense[index_map + n_complex]
+                )
+                nz = np.where(np.abs(x_vec) > self.tol)[0]
+                if nz.size:
+                    rows_out.extend([idx1 * n + idx2] * len(nz))
+                    cols_out.extend(nz.tolist())
+                    data_out.extend(x_vec[nz].tolist())
 
-        bootstrap_array = np.zeros((n, n, self.param_dim_null), dtype=np.complex128)
-        for (i, j, k), value in bootstrap_dict.items():
-            bootstrap_array[i, j, k] = value
+        if data_out:
+            from scipy.sparse import coo_matrix
 
-        return csr_matrix(bootstrap_array.reshape(n * n, self.param_dim_null))
+            return coo_matrix(
+                (data_out, (rows_out, cols_out)),
+                shape=(n * n, self.param_dim_null),
+                dtype=np.complex128,
+            ).tocsr()
+        else:
+            return csr_matrix((n * n, self.param_dim_null), dtype=np.complex128)
 
     def get_operator_expectation_value(
         self, st_operator: SingleTraceOperator, param: np.ndarray
