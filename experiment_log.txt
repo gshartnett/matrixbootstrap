@@ -250,4 +250,39 @@ Fix: correct the RHS for all A_linear rows:
   Nonzero alpha entries: 1367/3179 need correction.
 Code change: solver_newton.py lines ~1214-1267: replace fallback-to-relaxed-SDP with
   corrected RHS computation, yielding 2811-dim null space (full cyclic constraints).
-Status: RUNNING (started 2026-03-27)
+Status: COMPLETE (diagnostic ran 2026-03-27 ~23:43)
+Result: ADMM-BLAS with 50 iters (corrected 2811-dim null space) still infeasible:
+  status=max_iter_reached, min_eig=-1.564, obj=1.874, max_quad_violation=1.0.
+  Corrected RHS confirmed consistent (||A pp - b||=1.11e-14, A_norm @ pp=1.0).
+  G eigenvalues: min=2.0, max=2.69, cond=1.34 (excellent — G conditioning is NOT bottleneck).
+  ADMM convergence: r_primal: 5.27→2.76 over 50 iters (barely moving); min_eig: -1.57→-1.56.
+  Root cause: ADMM convergence is logarithmic (~1e-5 per step in min_eig); would need
+    ~300K iterations to reach min_eig=0. Not feasible at 0.13s/iter.
+  Conclusion: corrected RHS is mathematically correct; ADMM is not viable for full SDP.
+
+===========================================================================
+ATTEMPT 17: CLARABEL full-dim + all 7 blocks + corrected RHS + max_iter=50
+===========================================================================
+Hypothesis: corrected RHS (A_norm @ pp=1.0) may allow CLARABEL to run past the
+  previous NumericalError point (~24 iters in Attempts 9-10 with inconsistent RHS).
+Config: cvxpy_solver=CLARABEL, maxiters_cvxpy=50, full-dim (3998-var), all 7 PSD blocks
+  [142,16,56,116,116,56,16], static_regularization_constant=1e-7.
+Runtime: 55.8 min (= 50 iters × ~67s/iter). All 7 PSD blocks inflate Schur complement.
+Result: FAILED — param_null.value=None (NumericalError or solver_error).
+Root cause: With corrected RHS, CLARABEL ran ~2× more iterations (50 vs 24) before
+  hitting NumericalError. Static regularization 1e-7 too small to stabilize Schur
+  complement near the PSD boundary with all 7 blocks.
+Key improvement over Attempts 9-10: corrected RHS let CLARABEL run further, but
+  fundamentally the same ill-conditioning issue occurs near PSD boundary.
+
+===========================================================================
+ATTEMPT 18 (CURRENT): CLARABEL + increased static_reg + corrected RHS
+===========================================================================
+Hypothesis: static_regularization_constant=1e-4 (vs 1e-7 before) stabilizes CLARABEL's
+  KKT system near PSD boundary, preventing NumericalError. Solution accuracy reduced to
+  ~1e-4 but that's within the acceptable range for bootstrap bounds (tol~1e-4).
+Fix: add clarabel_static_reg parameter to sdp_minimize_null and solve_bootstrap.
+  Default 1e-7 (unchanged); test with clarabel_static_reg=1e-4.
+Config: cvxpy_solver=CLARABEL, clarabel_static_reg=1e-4, maxiters_cvxpy=50,
+  full-dim (3998-var), all 7 PSD blocks, corrected RHS.
+Status: RUNNING (started 2026-03-28)

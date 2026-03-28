@@ -460,6 +460,20 @@ def _sdp_admm_blas(
         G = A_null.T @ A_null  # numpy DGEMM, (n_null × n_null)
         logger.info("_sdp_admm_blas: G computed in %.1f s", time.time() - t0)
 
+        # Log G eigenvalue range to diagnose conditioning (cheap: O(n_null^2))
+        g_eigs = np.linalg.eigvalsh(G)
+        g_eig_min = float(g_eigs[0])
+        g_eig_max = float(g_eigs[-1])
+        g_cond = g_eig_max / max(abs(g_eig_min), 1e-15)
+        logger.info(
+            "_sdp_admm_blas: G eigenvalues: min=%.4e, max=%.4e, cond=%.4e "
+            "(optimal rho ≈ %.4e)",
+            g_eig_min,
+            g_eig_max,
+            g_cond,
+            float(np.sqrt(abs(g_eig_min) * g_eig_max)),
+        )
+
         sigma = 1e-8 * max(1.0, float(np.diag(G).mean()))
         M_factor = rho * G + sigma * np.eye(n_null, dtype=np.float64)
         t0 = time.time()
@@ -664,6 +678,7 @@ def sdp_minimize_null(
     admm_rho: float = 1.0,
     admm_alpha: float = 1.5,
     admm_log_interval: int = 500,
+    clarabel_static_reg: float = 1e-7,
 ) -> tuple[bool, str, np.ndarray]:
     """
     Performs the following SDP minimization over the vector variable x:
@@ -1013,7 +1028,7 @@ def sdp_minimize_null(
             tol_gap_abs=max(eps_abs, 1e-5),
             tol_gap_rel=max(eps_rel, 1e-5),
             tol_feas=max(eps_abs, 1e-5),
-            static_regularization_constant=1e-7,
+            static_regularization_constant=clarabel_static_reg,
             equilibrate_enable=True,
             equilibrate_max_iter=20,
             solver=solver,
@@ -1099,6 +1114,7 @@ def solve_bootstrap(
     admm_rho: float = 1.0,
     admm_alpha: float = 1.5,
     admm_log_interval: int = 500,
+    clarabel_static_reg: float = 1e-7,
 ) -> np.ndarray:
     """
     Solve the bootstrap by minimizing the objective function subject to
@@ -1419,6 +1435,7 @@ def solve_bootstrap(
                 admm_rho=admm_rho,
                 admm_alpha=admm_alpha,
                 admm_log_interval=admm_log_interval,
+                clarabel_static_reg=clarabel_static_reg,
             )
 
         except Exception as e:
