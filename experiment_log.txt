@@ -285,4 +285,21 @@ Fix: add clarabel_static_reg parameter to sdp_minimize_null and solve_bootstrap.
   Default 1e-7 (unchanged); test with clarabel_static_reg=1e-4.
 Config: cvxpy_solver=CLARABEL, clarabel_static_reg=1e-4, maxiters_cvxpy=50,
   full-dim (3998-var), all 7 PSD blocks, corrected RHS.
-Status: RUNNING (started 2026-03-28)
+Runtime: 45.3 min. Iteration time ~90s/iter (Schur complement O(27189 × 3998²) dominates).
+Result: FAILED — param_null.value=None (NumericalError even with static_reg=1e-4).
+Root cause: Static regularization prevents KKT matrix singularity but cannot bound the
+  CONDITION NUMBER near the PSD boundary. The barrier Hessian eigenvalues scale as
+  1/λ_min² where λ_min → 0 at optimum. At iter ~45, the Schur complement is still
+  too ill-conditioned for CLARABEL to compute a usable step direction.
+  Effectively: static_reg pushed NumericalError from iter ~24 (Attempts 9-10) to iter ~45,
+  but didn't prevent it.
+Note: Tested with OLD code (3 redundant SVDs, ~4 min setup vs 1 min with new code).
+
+===========================================================================
+ATTEMPT 19: CLARABEL verbose + new code (single SVD + tol fix) + max_iter=20
+===========================================================================
+Motivation: With tolerance fix (tol = max(1e-5, static_reg × 10) = 1e-3 for static_reg=1e-4),
+  CLARABEL may declare "optimal" before hitting NumericalError (stops when gap < 1e-3).
+  With new code: setup ~1 min (single SVD) + 20 × 90s = ~31 min.
+Config: cvxpy_solver=CLARABEL, clarabel_static_reg=1e-4, max_iter=20, verbose=True.
+Status: KILLED (started 2026-03-28, killed before completion to pursue Burer-Monteiro approach)

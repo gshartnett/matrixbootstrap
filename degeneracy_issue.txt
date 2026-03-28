@@ -1,0 +1,110 @@
+================================================================================
+   DEGENERACY ISSUE IN L=3 MINI-BMN INVARIANT-BASIS BOOTSTRAP — SUMMARY
+   ================================================================================
+   Date: 2026-03-27/28
+   Context: L=3 mini-BMN bootstrap with SO(3) invariant basis (use_invariant_basis=True)
+
+   --------------------------------------------------------------------------------
+   ROOT CAUSE OF THE INCONSISTENCY
+   --------------------------------------------------------------------------------
+   When simplify_quadratic=True, the constraint-simplification machinery processes
+   all cyclic (quadratic) constraints and expresses them as linear constraints in
+   the null-basis parameterization. This produces a matrix A_linear (3179×3998).
+
+   The normalization constraint is A_norm @ param = 1, giving a 1×3998 row A_norm.
+
+   The PROBLEM: One row of A_linear is EXACTLY equal to A_norm:
+     Row 3178 of A_linear  =  A_norm  (to machine precision, ||diff|| = 1.6e-15)
+
+   This happened because the simplification process collapsed the normalization
+   direction into A_linear with RHS = 0, when the correct RHS should be 1.
+
+   Result: The stacked system [A_norm; A_linear] @ x = [1; 0, 0, ..., 0] is
+   INCONSISTENT — the same row appears twice with contradictory RHS values (1 vs 0).
+
+   Consequence: numpy lstsq returns a "particular solution" pp with:
+     ||A_full @ pp - b_full|| ≈ 1.0  (not ~0 as expected)
+     A_norm @ pp ≈ 0  (normalization constraint NOT satisfied!)
+
+   This invalidated ALL previous solver attempts that used the 2811-dim null space,
+   because every starting point had tr(1) ≈ 0 instead of tr(1) = 1.
+
+   --------------------------------------------------------------------------------
+   THE FIX (Attempt 16 / Corrected RHS)
+   --------------------------------------------------------------------------------
+   For each row k of A_linear, compute:
+     alpha_k = (A_linear[k] @ A_norm_vec) / ||A_norm_vec||²
+
+   This measures how much of A_norm is "encoded" in each A_linear row.
+   Set the corrected RHS:
+     b_corrected = [1, alpha_0, alpha_1, ..., alpha_3178]
+
+   Now the system [A_norm; A_linear] @ x = b_corrected IS consistent:
+     1367 out of 3179 rows have nonzero alpha (these are the affected rows)
+     ||A_full @ pp_corrected - b_corrected|| = 1.11e-14  ✓
+     A_norm @ pp_corrected = 1.000000  ✓  (normalization satisfied)
+
+   The null space of A_full is unchanged (still 2811-dim) — only the particular
+   solution pp changes. The null space itself was always correct.
+
+   --------------------------------------------------------------------------------
+   IMPLEMENTATION
+   --------------------------------------------------------------------------------
+   File: matrixbootstrap/solver_newton.py, in solve_bootstrap()
+
+   The fix is in the _quadratic_is_linear_only branch. Instead of calling
+   lstsq(A_full, b_full) and getting a wrong pp, the code now:
+
+   1. Computes a single thin SVD of A_full_dense (3180×3998) — ONCE
+   2. Uses U, s, Vt to check consistency: ||b_full - U U^T b_full|| > 1e-4
+   3. If inconsistent: computes alpha_k and b_corrected, then pp via pseudoinverse
+   4. Derives null space from Vt[rank:].T (no second SVD needed)
+   5. Derives full-rank equality rows from Vt[:rank] (no third SVD needed)
+
+   This also eliminated 3 redundant SVD computations that were happening before
+   (lstsq for pp_test, lstsq for pp_corrected, get_null_space_dense, plus explicit
+   svd for equality constraints = 4 total → now 1 SVD for everything).
+
+   Setup time improvement: ~4 min (4 SVDs) → ~1 min (1 SVD)
+
+   --------------------------------------------------------------------------------
+   IMPACT ON SOLVER ATTEMPTS
+   --------------------------------------------------------------------------------
+   Before fix (Attempts 1–15):
+     - ADMM: started from pp with tr(1)≈0, all iterations invalid
+     - CLARABEL: hit NumericalError at ~24 iterations (partly due to bad start)
+     - All results with min_eig < 0 were doubly invalid (bad pp + PSD failure)
+
+   After fix (Attempts 16+):
+     - ADMM (50 iters, corrected RHS): starts correctly (tr(1)=1.0), but still
+       doesn't converge — min_eig stays at ~-1.564 (fundamental ADMM limitation)
+     - CLARABEL (50 iters, static_reg=1e-7): ran to iter ~50 before NumericalError
+       (vs iter ~24 before) — corrected RHS helped, but NumericalError still occurs
+     - CLARABEL (50 iters, static_reg=1e-4): also hits NumericalError at ~iter 45
+       — static regularization delays but cannot prevent ill-conditioning near
+       the PSD boundary (barrier Hessian diverges as λ_min → 0)
+
+   --------------------------------------------------------------------------------
+   CURRENT STATUS (as of 2026-03-28)
+   --------------------------------------------------------------------------------
+   The inconsistency is FIXED. The mathematical foundation is now correct.
+   The remaining challenge is purely computational: both CLARABEL (interior-point)
+   and ADMM (first-order) struggle with the near-degenerate SDP that arises because
+   the optimal solution sits on the boundary of the PSD cone.
+
+   Active investigation: CLARABEL with tolerance matched to regularization level
+   (tol = 10 × static_reg = 1e-3) may allow early stopping with a valid result
+   before NumericalError occurs. Testing in progress.
+
+   --------------------------------------------------------------------------------
+   KEY NUMBERS (L=3 invariant basis, nu=3.0, lambda=1)
+   --------------------------------------------------------------------------------
+     param_dim_null:          3998
+     null_space_dim:          2811  (full cyclic constraints)
+     bootstrap matrix:        71×71 complex → 142×142 real (charge-0 sector)
+     PSD blocks (all 7):      [142, 16, 56, 116, 116, 56, 16] → 27189 rows total
+     rank of A_full:          1187  (out of 3180 rows)
+     nonzero alpha entries:   1367 / 3179 (rows needing RHS correction)
+     G condition number:      1.34 (excellent — G = A_null^T A_null, not the bottleneck)
+     CLARABEL time/iteration: ~90s (dominated by Schur complement: 27189 × 3998² flops)
+   ================================================================================

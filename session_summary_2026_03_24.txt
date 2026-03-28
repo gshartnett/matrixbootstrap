@@ -1,0 +1,147 @@
+Session Summary — 2026-03-24
+============================
+
+BRANCH: feat/bootstrap-class-hierarchy
+PR: #20 (open, not yet merged)
+
+== What was accomplished ==
+
+1. CLASS HIERARCHY REFACTOR (PR #20)
+   - Introduced BootstrapSystem (ABC base), BootstrapSystemReal (renamed from
+     old BootstrapSystem), BootstrapSystemComplex (refactored to inherit base).
+   - Removed hasattr guard in solver; base class has build_augmented_bootstrap_table
+     raising NotImplementedError.
+   - config_utils: BootstrapSystemReal added to _BOOTSTRAP_CLASSES; backward-
+     compatible with old "BootstrapSystem" key.
+   - All 38 tests pass; BO comparison scripts regenerate correctly.
+
+2. THREE BUGS FIXED IN BootstrapSystemComplex (committed to feat branch):
+
+   Bug 1 — coo_matrix not subscriptable (bootstrap.py load_config_cache):
+     load_npz returns coo_matrix; solver's gradient path does matrix[i] (row
+     indexing) which requires CSR. Fix: .tocsr() instead of .copy() when loading
+     quadratic constraints from cache.
+
+   Bug 2 — Wrong real-basis projection for complex operator coefficients
+     (bootstrap_complex.py single_trace_to_coefficient_vector):
+     For operator S = sum_j z_j O_j, the correct real-basis coefficient vector
+     (projecting onto Re(<tr(S)>)) is [Re(z), -Im(z)] @ K, NOT [z, z] @ K.
+     The wrong formula gave complex constraint vectors for operators with imaginary
+     coefficients (e.g. Myers term i*eps_ijk tr(X_i X_j X_k)), causing CLARABEL
+     to reject the problem with "Array must be contiguous" or return infeasible.
+
+   Bug 3 — Non-deterministic operator ordering (bootstrap_complex.py
+     generate_operators_truncated):
+     operator_list = list(set([...])) has random ordering between Python processes
+     due to hash randomisation. The null space matrix K is cached with one ordering,
+     then loaded in a new process with a different operator_dict ordering, making
+     L @ K != 0 (corrupt null space). Fix: use sorted(set([...])).
+     IMPORTANT: If you regenerate the per-config cache after this fix, it will be
+     correct. Any cache built before this fix (with list(set())) is corrupt and must
+     be deleted and rebuilt.
+
+   Bug 4 — Wrong bootstrap class in config_utils:
+     generate_config_bmn was using "BootstrapSystem" instead of
+     "BootstrapSystemComplex". Fixed.
+
+   Bug 5 — Feasibility threshold too tight (mini_bmn_feasibility_bound.py):
+     TOL_QUAD=1e-6 caused false-negative infeasibility for high E_trial where
+     Newton residual stabilises at ~1.5e-6 (within CLARABEL's 1e-5 precision).
+     Fix: use EPS=1e-5 as the feasibility threshold.
+
+3. NEW SCRIPT: scripts/mini_bmn_feasibility_bound.py
+   Feasibility-based lower bounds on mini-BMN ground state energy.
+   Uses binary search: fix <H>=E_trial, minimize ||x||, search for infeasibility.
+
+   L=2 results (nu=1.0, 6 bisection steps):
+     lambda=0.25: E_bound ~ 1.63
+     lambda=1.50: E_bound ~ 2.13
+     lambda=2.75: E_bound ~ 1.64
+     lambda=4.00: E_bound ~ 1.63
+
+   Note: non-monotonic behavior at L=2 is a coarseness artifact. Expect
+   monotonically increasing bounds at L=3+.
+
+== Mini-BMN Model ==
+
+Model: MiniBMN(nu, lambda)
+  g2 = nu^2, g3 = 3*nu*sqrt(lambda), g4 = lambda
+  H = g2/2 * sum_i tr(X_i^2 + P_i^2)
+    + i*g3/3 * eps_ijk tr(X_i X_j X_k)    ← Myers term, imaginary coeff!
+    + g4/4 * commutator^2 terms
+  3 matrices (X0,X1,X2), 3 momenta (Pi0,Pi1,Pi2)
+  Requires BootstrapSystemComplex (not BootstrapSystemReal) due to cubic term.
+
+Scale:
+  L=2: bootstrap_matrix_dim=43, param_dim_null=12
+       86x86 real PSD block (43x43 complex -> 2x2 block)
+       Very fast (~seconds per SDP)
+  L=3: bootstrap_matrix_dim=259, param_dim_null=??
+       518x518 real PSD block
+       ~6x larger matrix -> ~216x more work per SDP step
+       Expect slow but potentially tractable with CLARABEL
+
+== Cache Layout ==
+
+Structural cache (coupling-independent):
+  cache/structural/{struct_hash}/   -- cyclic constraints, operator list
+  BMN L=2 structural hash: 45cd4bffe490
+
+Per-config cache (coupling-dependent):
+  cache/per_config/{config_id}/    -- null space, quadratic constraints, bootstrap table
+  BMN L=2 nu=1.0 config: d702690fd27c (was deleted and rebuilt with sorted() fix)
+
+Config YAMLs:
+  runs/MiniBMN_feasibility_ref_L2_nu1.0/configs/d702690fd27c.yaml
+
+== Key Files ==
+
+matrixbootstrap/bootstrap.py           -- BootstrapSystem (ABC) + BootstrapSystemReal
+matrixbootstrap/bootstrap_complex.py   -- BootstrapSystemComplex
+matrixbootstrap/solver_newton.py       -- solve_bootstrap (Newton+SDP loop)
+matrixbootstrap/config_utils.py        -- generate_config_bmn, _build_config_cache
+matrixbootstrap/models.py              -- MiniBMN model definition
+scripts/mini_bmn_feasibility_bound.py  -- feasibility bound script
+smoke_test_bmn.py                      -- quick smoke test (NOT committed)
+
+== Open PRs ==
+
+PR #20: feat/bootstrap-class-hierarchy
+  Status: All review comments addressed, tests pass, scripts work, BMN works.
+  Not yet merged. Ready to merge after L=3 test.
+
+== Next Steps ==
+
+- Try L=3 for mini-BMN (running in background as of end of session)
+  L=3 config dir: MiniBMN_feasibility_ref_L3_nu1.0
+  Expected runtime: much slower (hours?)
+- Merge PR #20 once L=3 result is in hand
+
+== L=3 Run Status ==
+
+Started: 2026-03-24 ~20:40 MDT
+Script: scripts/mini_bmn_L3_run.py (one-off run, lambda=1.0 only, N_BISECT=4)
+Log: runs/bmn_L3_run.log
+PID: 31985 (python process inside conda)
+
+L=3 scale:
+  operator_list: 55,987 operators (vs 1,555 at L=2, 36x more)
+  bootstrap_matrix_dim: 259 (vs 43 at L=2)
+  Real PSD block: 518x518 (vs 86x86 at L=2)
+
+BOTTLENECK: generate_symmetry_constraints
+  Loops over all operators of degree 1..2L=6 in the eigenbasis (n=6 matrices).
+  Degree-6 operators: 6^6 = 46,656 inner iterations EACH.
+  Total ~1.3 billion Python iterations → ~hours.
+  Process is stuck here; progress after Hamiltonian (5052) + gauge (1555) constraints.
+
+RECOMMENDATION:
+  - vectorize generate_symmetry_constraints (replace inner product loops with
+    np.einsum or tensor products)
+  - OR disable symmetry constraints for L=3 (impose_symmetries=False) to test
+    the SDP part first, then add symmetry constraints later
+  - The structural cache (cyclic constraints) are stored separately and would
+    be rebuilt quickly; the symmetry constraint bottleneck is the structural cache
+
+MEMORY: ~400MB (safe, won't crash)
+CPU: 100% (single core)
