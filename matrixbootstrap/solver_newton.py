@@ -1022,12 +1022,15 @@ def sdp_minimize_null(
         #   - Sparse Schur complement (B^T D B where B is sparse 5041×3998).
         #   - Expected ~10-15 s per iteration (vs 58 s with dense null-space projection).
         #   - Should converge to optimality in 30-50 iterations without NumericalError.
+        # Set tolerances ≥ 10 × static_reg so CLARABEL can declare "optimal" within
+        # the precision achievable given the regularization level.
+        _tol = max(eps_abs, 1e-5, clarabel_static_reg * 10)
         prob.solve(
             verbose=verbose,
             max_iter=maxiters,
-            tol_gap_abs=max(eps_abs, 1e-5),
-            tol_gap_rel=max(eps_rel, 1e-5),
-            tol_feas=max(eps_abs, 1e-5),
+            tol_gap_abs=_tol,
+            tol_gap_rel=_tol,
+            tol_feas=_tol,
             static_regularization_constant=clarabel_static_reg,
             equilibrate_enable=True,
             equilibrate_max_iter=20,
