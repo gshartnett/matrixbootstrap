@@ -66,6 +66,7 @@ optimization_keys_newton = [
     "admm_rho",
     "admm_alpha",
     "admm_log_interval",
+    "clarabel_static_reg",
 ]
 
 optimization_keys_pytorch = [
@@ -97,6 +98,7 @@ def generate_optimization_config_newton(
     admm_rho=1.0,
     admm_alpha=1.5,
     admm_log_interval=500,
+    clarabel_static_reg=1e-7,
 ):
 
     optimization_config_dict = {
@@ -116,6 +118,7 @@ def generate_optimization_config_newton(
         "admm_rho": admm_rho,
         "admm_alpha": admm_alpha,
         "admm_log_interval": admm_log_interval,
+        "clarabel_static_reg": clarabel_static_reg,
         "optimization_method": "newton",
     }
 
