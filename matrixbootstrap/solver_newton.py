@@ -1260,8 +1260,35 @@ def solve_bootstrap(
             A_full_dense.shape[0],
             A_full_dense.shape[1],
         )
-        _pp_test = np.linalg.lstsq(A_full_dense, b_full, rcond=None)[0]
-        _resid_test = float(np.linalg.norm(A_full_dense @ _pp_test - b_full))
+        # Compute thin SVD of A_full ONCE — reuse for consistency check, particular
+        # solution, null space, and full-rank equality constraints (avoids 3-4 separate
+        # SVD calls that each take ~1 min for this 3180×3998 matrix).
+        logger.info(
+            "Computing thin SVD of (%d x %d) constraint matrix (once)...",
+            A_full_dense.shape[0],
+            A_full_dense.shape[1],
+        )
+        U_svd, s_svd, Vt_svd = np.linalg.svd(A_full_dense, full_matrices=False)
+        rank_tol = max(s_svd[0] * 1e-8, 1e-10)
+        rank_svd = int(np.sum(s_svd > rank_tol))
+        logger.info("SVD rank = %d (tol=%.2e)", rank_svd, rank_tol)
+
+        # Null space: right singular vectors for zero singular values.
+        null_space_full = Vt_svd[rank_svd:, :].T  # shape: (n_params, n_params - rank)
+
+        # Compute particular solution (minimum-norm least-squares) via pseudoinverse.
+        # pp = Vt[:rank].T @ diag(1/s[:rank]) @ U[:,:rank].T @ b
+        def _svd_lstsq(b_vec):
+            """Min-norm least-squares solution using precomputed SVD."""
+            return Vt_svd[:rank_svd, :].T @ (
+                (U_svd[:, :rank_svd].T @ b_vec) / s_svd[:rank_svd]
+            )
+
+        # Check if b_full is in the row space of A_full.  If not, the system is
+        # inconsistent — this happens when simplify_quadratic=True collapsed the
+        # normalization row into A_linear with a wrong (zero) RHS.
+        b_proj = U_svd[:, :rank_svd] @ (U_svd[:, :rank_svd].T @ b_full)
+        _resid_test = float(np.linalg.norm(b_full - b_proj))
         if _resid_test > 1e-4:
             # The normalization direction A_norm is in the row space of A_linear
             # (simplify_quadratic=True collapsed a cyclic constraint row into A_norm,
@@ -1271,7 +1298,7 @@ def solve_bootstrap(
             # so the corrected system [A_norm; A_linear] @ x = [1; alpha] IS consistent.
             logger.warning(
                 "Quadratic constraints inconsistent with normalization "
-                "(||A pp - b||=%.4f > 1e-4). Correcting RHS via projection of "
+                "(||b - proj(b)||=%.4f > 1e-4). Correcting RHS via projection of "
                 "A_norm onto A_linear rows to obtain consistent 2811-dim null space.",
                 _resid_test,
             )
@@ -1284,7 +1311,7 @@ def solve_bootstrap(
             # A_linear rows are rows 1: of A_full_dense
             _alpha = A_full_dense[1:, :] @ _A_norm_vec / _norm_sq  # (n_linear,)
             _b_corrected = np.concatenate([[1.0], _alpha])
-            _pp_corrected = np.linalg.lstsq(A_full_dense, _b_corrected, rcond=None)[0]
+            _pp_corrected = _svd_lstsq(_b_corrected)
             _resid_corrected = float(
                 np.linalg.norm(A_full_dense @ _pp_corrected - _b_corrected)
             )
@@ -1314,25 +1341,20 @@ def solve_bootstrap(
                 null_space_full = get_null_space_dense(matrix=_A_norm_dense)
             else:
                 param_particular_full = _pp_corrected
-                null_space_full = get_null_space_dense(matrix=A_full_dense)
-                # Also update b_full so SVD and equality constraint caches are consistent.
+                # null_space_full already computed from A_full_dense SVD above
+                # Update b_full so full-rank equality cache uses consistent RHS.
                 b_full = _b_corrected
         else:
-            param_particular_full = _pp_test
-            null_space_full = get_null_space_dense(matrix=A_full_dense)
+            param_particular_full = _svd_lstsq(b_full)
         logger.info("Pre-computed null space: %d dimensions.", null_space_full.shape[1])
         _null_space_cache = (null_space_full, param_particular_full)
 
-        # Compute full-rank equality constraints via thin SVD of A_full.
+        # Full-rank equality constraints from the same SVD.
         # A_full (3180×3998) has rank 1187 with 1993 redundant rows.
         # Passing the rank-deficient A_full directly to CLARABEL causes a
         # singular KKT system.  Instead, use the SVD row-space basis:
         #   A_full = U Σ Vt  =>  equivalent full-rank system: Vt_r x = b_eq
         # where Vt_r (1187×3998) has orthonormal rows and b_eq = (U_r^T b) / σ.
-        logger.info("Computing SVD-based full-rank equality constraints...")
-        U_svd, s_svd, Vt_svd = np.linalg.svd(A_full_dense, full_matrices=False)
-        rank_tol = max(s_svd[0] * 1e-8, 1e-10)
-        rank_svd = int(np.sum(s_svd > rank_tol))
         A_eq_full_rank = Vt_svd[:rank_svd, :]  # (rank × n_params)
         b_eq_full_rank = (U_svd[:, :rank_svd].T @ b_full) / s_svd[:rank_svd]  # (rank,)
         logger.info(
