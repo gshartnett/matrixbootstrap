@@ -67,6 +67,7 @@ optimization_keys_newton = [
     "admm_alpha",
     "admm_log_interval",
     "clarabel_static_reg",
+    "verbose",
 ]
 
 optimization_keys_pytorch = [

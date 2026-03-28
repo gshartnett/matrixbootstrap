@@ -1118,6 +1118,7 @@ def solve_bootstrap(
     admm_alpha: float = 1.5,
     admm_log_interval: int = 500,
     clarabel_static_reg: float = 1e-7,
+    verbose: bool = False,
 ) -> np.ndarray:
     """
     Solve the bootstrap by minimizing the objective function subject to
@@ -1449,7 +1450,7 @@ def solve_bootstrap(
                 eps_rel=eps_rel,
                 eps_infeas=eps_infeas,
                 reg=reg,
-                verbose=False,
+                verbose=verbose,
                 cvxpy_solver=cvxpy_solver,
                 use_factorization_block=use_factorization_block,
                 factorization_v_table=factorization_v_table,
