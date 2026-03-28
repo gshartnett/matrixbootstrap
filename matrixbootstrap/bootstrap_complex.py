@@ -9,6 +9,7 @@ from scipy.sparse import (
     coo_matrix,
     csr_matrix,
     hstack,
+    load_npz,
     save_npz,
     vstack,
 )
@@ -765,6 +766,45 @@ class BootstrapSystemComplex(BootstrapSystem):
             "quadratic": quadratic_terms.tocsr(),
         }
 
+    def load_config_cache(self, path: str) -> None:
+        """Override: load base cache then also load extra bootstrap tables."""
+        super().load_config_cache(path)
+        import os
+
+        if not os.path.exists(path):
+            return
+        charge_sector_bases = getattr(self, "_charge_sector_bootstrap_bases", None)
+        if charge_sector_bases is None:
+            return
+        # Try to load cached extra tables; fall back to rebuilding if missing.
+        extra = {}
+        for q in sorted(charge_sector_bases.keys()):
+            fname = path + f"/extra_bootstrap_table_q{q:+d}.npz"
+            if os.path.exists(fname):
+                extra[q] = load_npz(fname).tocsr()
+            else:
+                break  # cache incomplete — will rebuild below
+        if len(extra) == len(charge_sector_bases):
+            self.extra_bootstrap_tables = extra
+            logger.info(
+                "Loaded extra bootstrap tables for charges: %s", sorted(extra.keys())
+            )
+        else:
+            # Cache files missing; rebuild from scratch using the current null space.
+            if self.null_space_matrix is not None:
+                logger.info("Rebuilding extra bootstrap tables (not in cache)...")
+                self.extra_bootstrap_tables = {
+                    q: self._build_table_for_basis(basis)
+                    for q, basis in sorted(charge_sector_bases.items())
+                }
+                logger.info(
+                    "Rebuilt extra bootstrap tables for charges: %s",
+                    sorted(self.extra_bootstrap_tables.keys()),
+                )
+                # Save for next time
+                for q, tq in self.extra_bootstrap_tables.items():
+                    save_npz(path + f"/extra_bootstrap_table_q{q:+d}.npz", tq)
+
     def build_bootstrap_table(self) -> None:
         """
         Creates the bootstrap table.
@@ -851,6 +891,18 @@ class BootstrapSystemComplex(BootstrapSystem):
                 self.config_cache_path + "/bootstrap_table_sparse.npz",
                 self.bootstrap_table_sparse,
             )
+            # Save extra (non-zero charge sector) bootstrap tables so they can
+            # be loaded when loading from cache (without rebuilding from scratch).
+            if hasattr(self, "extra_bootstrap_tables"):
+                for q, tq in self.extra_bootstrap_tables.items():
+                    fname = (
+                        self.config_cache_path + f"/extra_bootstrap_table_q{q:+d}.npz"
+                    )
+                    save_npz(fname, tq)
+                logger.info(
+                    "Saved extra bootstrap tables for charges: %s",
+                    sorted(self.extra_bootstrap_tables.keys()),
+                )
 
     def _build_table_for_basis(self, basis_list) -> "csr_matrix":
         """Build a bootstrap table for an arbitrary list of bootstrap basis operators.

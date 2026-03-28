@@ -63,6 +63,9 @@ optimization_keys_newton = [
     "radius",
     "PRNG_seed",
     "use_factorization_block",
+    "admm_rho",
+    "admm_alpha",
+    "admm_log_interval",
 ]
 
 optimization_keys_pytorch = [
@@ -91,6 +94,9 @@ def generate_optimization_config_newton(
     radius=1e5,
     cvxpy_solver="SCS",
     use_factorization_block=False,
+    admm_rho=1.0,
+    admm_alpha=1.5,
+    admm_log_interval=500,
 ):
 
     optimization_config_dict = {
@@ -107,6 +113,9 @@ def generate_optimization_config_newton(
         "radius": radius,
         "cvxpy_solver": cvxpy_solver,
         "use_factorization_block": use_factorization_block,
+        "admm_rho": admm_rho,
+        "admm_alpha": admm_alpha,
+        "admm_log_interval": admm_log_interval,
         "optimization_method": "newton",
     }
 
