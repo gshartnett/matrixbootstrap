@@ -430,17 +430,23 @@ def get_quadratic_constraint_vector_sparse(
 
     # compute the gradient
     num_constraints = linear_term.shape[0]
-    quad_terms = [
-        quadratic_constraints["quadratic"][i].reshape((len(param), len(param)))
-        for i in range(num_constraints)
-    ]
-    quad_terms = vstack(
-        [
-            csr_matrix(quad_term @ param + quad_term.T @ param)
-            for quad_term in quad_terms
+    if num_constraints == 0:
+        d = len(param)
+        from scipy.sparse import csr_matrix as _csr
+
+        constraint_grad = _csr((0, d), dtype=np.float64)
+    else:
+        quad_terms = [
+            quadratic_constraints["quadratic"][i].reshape((len(param), len(param)))
+            for i in range(num_constraints)
         ]
-    )
-    constraint_grad = quadratic_constraints["linear"] + quad_terms
+        quad_terms = vstack(
+            [
+                csr_matrix(quad_term @ param + quad_term.T @ param)
+                for quad_term in quad_terms
+            ]
+        )
+        constraint_grad = quadratic_constraints["linear"] + quad_terms
 
     # I found that this is critical, without it the result is wrong
     constraint_grad = constraint_grad.todense()
@@ -630,8 +636,10 @@ def solve_bootstrap(
         quadratic_constraint_violation = get_quadratic_constraint_vector_sparse(
             quadratic_constraints_numerical, param_new
         )
-        max_quadratic_constraint_violation = np.max(
-            np.abs(quadratic_constraint_violation)
+        max_quadratic_constraint_violation = (
+            np.max(np.abs(quadratic_constraint_violation))
+            if quadratic_constraint_violation.size
+            else 0.0
         )
 
         min_bootstrap_eigenvalue = np.linalg.eigvalsh(

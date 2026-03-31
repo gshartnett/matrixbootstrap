@@ -271,6 +271,9 @@ class MatrixSystem:
         operator_basis: list[str],
         commutation_rules_concise: int,
         hermitian_dict: dict[str, str],
+        conjugate_map: dict = None,
+        precomputed_commutation_rules: dict = None,
+        conjugate_phase_map: dict = None,
     ):
         self.operator_basis = operator_basis
 
@@ -279,17 +282,38 @@ class MatrixSystem:
             raise ValueError(
                 "Warning, keys of hermitian_dict must match operator_basis elements."
             )
-        self.commutation_rules = self.build_commutation_rules(commutation_rules_concise)
+        self.conjugate_map = conjugate_map
+        # Per-operator conjugation phase: eig_k† = conjugate_phase_map[eig_k] * eig_{conj_map[k]}
+        # For original basis (no eigenbasis transform) this is None and defaults to ±1 from hermitian_dict
+        self.conjugate_phase_map = conjugate_phase_map
+        if precomputed_commutation_rules is not None:
+            self.commutation_rules = precomputed_commutation_rules
+        else:
+            self.commutation_rules = self.build_commutation_rules(
+                commutation_rules_concise
+            )
+
+    def hermitian_conjugate_tuple(self, op_tuple: tuple) -> tuple:
+        """Return the Hermitian conjugate of a tuple of single-matrix operator names."""
+        if self.conjugate_map:
+            return tuple(self.conjugate_map[s] for s in reversed(op_tuple))
+        return op_tuple[::-1]
 
     def hermitian_conjugate(self, operator: MatrixOperator) -> Self:
         # assumes operator basis is Hermitian or anti-Hermitian
         data = {}
         for op, coeff in operator:
-            reversed_op = op[::-1]
-            num_antihermitian = sum(
-                1 * (not self.hermitian_dict[op_str]) for op_str in op
-            )
-            data[reversed_op] = (-1) ** num_antihermitian * np.conjugate(coeff)
+            reversed_op = self.hermitian_conjugate_tuple(op)
+            if self.conjugate_phase_map is not None:
+                # eigenbasis: each eig_k† = phase_k * eig_{conj_k}, so
+                # (eig_{k1}...eig_{kn})† = prod(phase_ki) * rev_conj(tuple)
+                phase = complex(
+                    np.prod([self.conjugate_phase_map.get(s, 1.0 + 0j) for s in op])
+                )
+            else:
+                num_antihermitian = sum(1 for s in op if not self.hermitian_dict[s])
+                phase = complex((-1) ** num_antihermitian)
+            data[reversed_op] = phase * np.conjugate(coeff)
         return operator.__class__(data=data)
 
     def build_commutation_rules(self, commutation_rules_concise):

@@ -1,0 +1,305 @@
+L=3 Mini-BMN Invariant-Basis Bootstrap — Experiment Log
+==========================================================
+Date: 2026-03-26
+
+Goal: Run L=3 mini-BMN bootstrap with SO(3) invariant basis (Cartan eigenbasis) and
+      obtain energy lower bounds for nu in {0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0}, lambda=1.
+
+Problem size (L=3, use_invariant_basis=True):
+  param_dim (before basic constraints): ~22062
+  param_dim_null (after Hamiltonian + gauge + odd-degree): 3998
+  null_space_dim (after all linear constraints): 2811
+  bootstrap matrix dimension: 71x71 (charge-0 sector, complex -> 142x142 real block)
+  linear "quadratic" constraints: 3179 (all zero quadratic part)
+  total constraint rows A_full: 3180 (= 1 for tr(1)=1 + 3179 cyclic)
+
+Solver stack: Newton outer loop (solver_newton.py) + CVXPY + SCS inner loop
+
+===========================================================================
+ATTEMPT 1: Null-space parameterization (2811-dim variable) + SCS direct
+===========================================================================
+Config: cvxpy_solver=SCS, maxiters_cvxpy=500, use_indirect=False (default)
+Outcome: QDLDL_factor runs for 37+ minutes without completing
+Root cause: B @ N where B=(5041,3998) sparse and N=(3998,2811) dense gives a
+            DENSE (5041,2811) A matrix (14M entries). QDLDL Cholesky is O(n^3).
+
+===========================================================================
+ATTEMPT 2: Precompute B@N in numpy (not CVXPY) + SCS indirect
+===========================================================================
+Fix: precompute bt_proj = bootstrap_table_sparse.dot(null_space_projector) in numpy
+     before CVXPY builds expressions. CVXPY then only sees dense proj @ param_null.
+Also: add use_indirect=True to SCS solve to avoid QDLDL factorization.
+Outcome: SCS indirect runs (CG steps visible in profiler) but 500 iterations
+         not enough; returns optimal_inaccurate with min_bootstrap_eigenvalue=-694.
+Root cause: CG still slow with 14M-entry dense A (28x slowdown over sparse case).
+            500 ADMM steps insufficient for convergence.
+
+===========================================================================
+ATTEMPT 3: Full-dim (3998) + sparse B + explicit equality + SCS direct
+===========================================================================
+Fix: use full-dim parameterization (like CLARABEL) so bootstrap_table_sparse
+     is used directly in CVXPY (sparse A). Equality constraints added explicitly.
+Outcome: QDLDL_factor still runs for 5+ minutes then SCS gives optimal_inaccurate.
+Root cause: Even though B is "sparse" (nnz ~ few %), the bootstrap table has
+            columns with O(1000) nonzeros causing massive QDLDL fill-in.
+            500 iterations still not enough.
+
+===========================================================================
+ATTEMPT 4 (CURRENT): Full-dim (3998) + sparse B + explicit equality + SCS indirect + 5000 iters
+===========================================================================
+Fix: keep full-dim + sparse B (so A is sparse), but switch to use_indirect=True
+     (CG, no QDLDL). Also increase maxiters_cvxpy from 500 -> 5000.
+Rationale:
+  - Sparse A: nnz(B) ~ 500K-1M vs dense A: 14M entries -> 14-28x less work per CG step
+  - No QDLDL init overhead (was 5+ minutes)
+  - 5000 ADMM iterations should converge for well-conditioned sparse problem
+Also:
+  - Added early-exit in Newton loop for linear-only case (exits after step 1,
+    not 10 as before). Saves 9x unnecessary SCS calls.
+  - Added pre-computed null space before Newton loop (avoid 30-min dense SVD
+    per step; instead computed ONCE in 22 seconds).
+Status: RUNNING (started 2026-03-26 ~21:30)
+
+===========================================================================
+Key code changes made (solver_newton.py):
+===========================================================================
+1. sdp_minimize_null: added _table_expr precomputation for ECOS/OSQP only
+   (SCS/CLARABEL/MOSEK now use full-dim parameterization)
+2. sdp_minimize_null: changed SCS to use full-dim variable (3998) + equality constraints
+3. sdp_minimize_null: use_indirect=True for SCS in sdp_minimize_null
+4. solve_bootstrap: precompute null space ONCE before Newton loop for linear-only case
+5. solve_bootstrap: early-exit after step 1 for linear-only case
+
+===========================================================================
+Config settings for current run:
+===========================================================================
+  max_degree_L: 3
+  cvxpy_solver: SCS
+  maxiters: 50 (Newton outer; exits at step 1 due to linear-only early-exit)
+  maxiters_cvxpy: 5000 (SCS ADMM iterations)
+  eps_abs: 1e-5, eps_rel: 1e-5
+  use_invariant_basis: True
+  simplify_quadratic: True
+  odd_degree_vanish: True
+
+===========================================================================
+ATTEMPTS 5-8 (chronological, from prior session):
+===========================================================================
+
+ATTEMPT 5: CLARABEL full-dim + equality constraints (rank-deficient A_full)
+  Root cause: A_full (3180x3998) is rank 1187 with 1993 redundant rows.
+  QDLDL KKT factorization sees singular matrix → NumericalError after ~3.5 min.
+  All 7 configs failed: "Solver 'CLARABEL' failed".
+
+ATTEMPT 6: CLARABEL null-space parameterization (2811-dim), no equality constraints
+  Fix: precompute N=null_space(A_full), pp=particular_solution(A_full).
+       CVXPY variable is the 2811-dim null-space coefficient x.
+       tbl.dot(N) precomputed in numpy; CVXPY sees dense proj @ x + const.
+       Avoids KKT singularity entirely (no equality constraints).
+  Outcome: CLARABEL runs ~50 iterations then NumericalError (dense Schur ill-conditioned).
+  No valid result returned.
+
+ATTEMPT 7: L=2 validation with CLARABEL null-space
+  Used L=2 invariant basis (smaller problem) to validate the approach.
+  Result: status=optimal, energy=0.752, min_eig≈1.77e-16. CORRECT!
+  Confirmed: null-space CLARABEL approach is mathematically sound.
+
+ATTEMPT 8: CLARABEL null-space + max_iter=15 (stop before NumericalError)
+  Hypothesis: interior-point iterates at iter 15 are inside PSD cone → valid bound.
+  Result for nu=3.0 (04fab7db5301): status=user_limit, energy=-1.4248,
+    min_bootstrap_eigenvalue=-0.306 (NEGATIVE → invalid PSD constraint!).
+  Conclusion: 15 iterations insufficient; CLARABEL hasn't reached PSD-feasible iterate yet.
+  Linear constraint violation=0.894 (numerical noise from ||param||=2.6M and
+    floating-point errors in null_space basis; relative error ~3.4e-7, acceptable).
+  Second config (nu=1.0) ran for 6+ hours with no log → killed externally (terminal close?).
+
+===========================================================================
+ATTEMPT 9: CLARABEL null-space + max_iter=40
+===========================================================================
+Fix: increase max_iter cap from 15 to 40.
+Rationale:
+  - 15 iters: min_eig=-0.306 (infeasible). Need more iterations for PSD feasibility.
+  - 40 iters: ~40 min/config at 58s/iter. Should reach PSD-feasible iterate.
+  - NumericalError previously observed at ~50 iters → 40 leaves buffer.
+Also: deleted invalid result for 04fab7db5301.json (min_eig<0).
+Status: FAILED — NumericalError at ~24 iters regardless (dense 2811×2811 Schur ill-conditioned).
+
+===========================================================================
+ATTEMPT 10: CLARABEL + SVD full-rank equality + full-dim (3998-var)
+===========================================================================
+Fix: pre-compute SVD-derived full-rank equality A_eq (1187×3998, rank=1187)
+     from thin SVD of A_full (3180×3998). CLARABEL gets full-rank equality block
+     → no KKT singularity from redundant rows.
+Rationale: Previously A_full had 1993 redundant rows causing singular KKT.
+Status: FAILED — NumericalError still at ~24 iters. Full-dim sparse Schur complement
+     is slightly faster per iteration (12s vs 58s) but same fundamental ill-conditioning
+     near PSD boundary. Not fixable by changing parameterization.
+
+===========================================================================
+ATTEMPT 11 (CURRENT): SCS DIRECT + full-dim (3998-var) + SVD full-rank equality
+===========================================================================
+Fix: use SCS solver (globally convergent ADMM, no NumericalError) with:
+  - Full-dim (3998-var) variable: sparse bootstrap tables → fast CVXPY canon (~6s)
+  - Full-rank SVD equality (1187×3998 sparse rows): avoids KKT singularity
+  - use_indirect=False (DIRECT): factors 3998×3998 normal eqs once (~5-45s)
+  - 100000 ADMM iterations: ~160-270s per config at 1.6ms/step
+Root cause of previous failures: CLARABEL cannot handle dense Schur complement.
+  SCS ADMM has no such issue — DIRECT mode factors normal equations once.
+Code changes:
+  - solver_newton.py: _use_full_rank_eq now triggers for SCS (and CLARABEL)
+  - configs: cvxpy_solver: SCS, maxiters_cvxpy: 100000
+Status: FAILED — OOM crash (computer hard-crashed at ~03:30 on 2026-03-27)
+Root cause: A_scs = (30369×3998, nnz=34,779,208). SCS DIRECT forms the normal
+  equations A^T A (3998×3998) as a first step; fill-in from 34.8M-nnz A is
+  catastrophic → OS kills the process before factorization completes.
+  The multi-block PSD structure (7 blocks: [142,16,56,116,116,56,16]) is what
+  inflated nnz so far beyond earlier estimates.
+
+===========================================================================
+ATTEMPT 12: Custom ADMM-BLAS solver — rho tuning (admm_rho_test)
+===========================================================================
+Implemented: custom _sdp_admm_blas that bypasses CVXPY and SCS entirely.
+  - Null-space parameterization (2811-dim variable x_null)
+  - Builds dense A_null = [bootstrap_tables @ N] via sparse @ dense (numpy)
+    A_null shape: (27189 × 2811), ~612 MB. n_psd comes from 7 PSD blocks:
+    main (142→10153 rows) + 6 charge sectors ([16,56,116,116,56,16]→17036 rows)
+  - G = A_null^T A_null via BLAS DGEMM (2811×2811, cached across configs)
+  - Cholesky G via scipy LAPACK cho_factor (~1s)
+  - Standard 2-block ADMM with over-relaxation alpha=1.5 (same as SCS default)
+  - x-update: cho_solve(F, rhs) — O(n_null^2) per step, fast
+  - s-update: proj_PSD per block — eigendecomposition of each block per step
+Rationale: avoids both QDLDL (slow for near-dense A^T A) and CVXPY overhead.
+  Cholesky factor reused across all 7 configs (only c_null changes per config).
+
+Tuning run (admm_rho_test, 2026-03-27 ~09:06–09:09):
+  3 configs: rho ∈ {1.0, 10.0, 100.0}, nu=3.0, maxiters_cvxpy=500
+Results (all three):
+  status: max_iter_reached
+  min_bootstrap_eigenvalue ≈ -0.314  (infeasible)
+  obj ≈ -0.001
+Conclusion: 500 ADMM iterations insufficient. rho has negligible effect at this
+  scale (all produce identical min_eig), suggesting the problem needs O(10K+) iters.
+
+===========================================================================
+ATTEMPT 13: Custom ADMM-BLAS solver — alpha tuning (admm_alpha_test)
+===========================================================================
+Tuning run (admm_alpha_test, 2026-03-27 ~09:25):
+  1 config: alpha=1.5, rho=1.0, nu=3.0, maxiters_cvxpy=500
+Result:
+  status: max_iter_reached
+  min_bootstrap_eigenvalue ≈ -0.314  (infeasible)
+Conclusion: Over-relaxation with alpha=1.5 produces same result as without it
+  at 500 iterations. Not a hyperparameter problem — simply needs far more iters.
+
+===========================================================================
+Current status (as of 2026-03-27):
+===========================================================================
+- custom ADMM-BLAS is implemented and runs without crashing (safe: no QDLDL,
+  dense 612 MB A_null matrix, G = 2811×2811 cached Cholesky)
+- 500 ADMM iterations clearly not enough; min_eig stuck at -0.314
+- Next step: convergence diagnostic (Attempt 14) before full 100K-iter run
+
+===========================================================================
+ATTEMPT 14: ADMM-BLAS convergence diagnostic (10K iters, log every 100)
+===========================================================================
+Goal: determine whether min_eig is actually trending toward 0 over iterations,
+  or whether the ADMM is stalled. Runs nu=3.0 config for 10000 iterations
+  with admm_log_interval=100 to produce a convergence trajectory.
+Script: scripts/admm_convergence_diag.py
+Log: runs/admm_convergence_diag.log
+Status: FAILED — SCS INDIRECT ran instead of ADMM-BLAS (code routing bug).
+  Code bug: the "SCS" branch in sdp_minimize_null called _sdp_scs_direct(use_indirect=True)
+  instead of _sdp_admm_blas. Result: 200 SCS CG iterations, 854s, status=infeasible
+  (inaccurate - reached max_iters). Also: inconsistency check fired → fallback to 3997-dim
+  normalization-only null space. Effective test: SCS INDIRECT with relaxed SDP, 4.27s/iter.
+  Conclusion: SCS INDIRECT is too slow (5 days for 100K iters) and returns infeasible.
+
+===========================================================================
+ATTEMPT 15: ADMM-BLAS with 3997-dim normalization-only null space (relaxed SDP)
+===========================================================================
+Fix: restore _sdp_admm_blas as the "SCS" routing in sdp_minimize_null.
+  - _sdp_admm_blas exists in code but was never called (bypassed by _sdp_scs_direct).
+  - Keep the inconsistency check fallback: since A_norm ∈ rowspace(A_linear) (verified:
+    ||A_norm - proj|| = 1.6e-15), the system [A_norm; A_linear] @ x = [1; 0] is
+    INCONSISTENT. The 3997-dim normalization-only null space is the correct fallback:
+    gives a relaxed SDP (no cyclic constraints) that is weaker but valid.
+  - Build A_null = PSD_rows @ N via _build_null_psd_rows (all 7 blocks).
+  - Cholesky cached per config (G = A_null^T A_null, 3997×3997).
+  - Run diagnostic first (200 iters, log every 20) to verify ADMM-BLAS is called and
+    making progress; then run full suite with sufficient iterations.
+Status: FAILED — relaxed SDP gives useless physics (obj=4.56, cyclic violation=39.7).
+Root cause: without cyclic constraints the SDP has no physics. Also: vectorization bug
+  (_scs_vec_sym/_scs_unvec_sym used tril_indices = row-major lower-tri, but SCS uses
+  column-major lower-tri). Fixed bug: tril_indices → triu_indices (for symmetric M,
+  M[triu] row-major = M col-major lower-tri). After fix, ADMM converges correctly
+  (min_eig -1.72 → -0.0005 in 2000 iters) but the relaxed SDP is still useless.
+
+===========================================================================
+ATTEMPT 16: ADMM-BLAS with corrected 2811-dim null space (consistent RHS)
+===========================================================================
+Root cause of inconsistency: A_norm (normalization direction, shape 1×3998) is
+  EXACTLY in the row space of A_linear (simplified quadratic constraints, 3179×3998):
+  ||A_norm - proj_rowspace(A_linear)|| = 1.6e-15. Row 3178 of A_linear = A_norm exactly.
+  The system [A_norm; A_linear] @ x = [1; 0] is inconsistent because the cyclic
+  constraint machinery (simplify_quadratic=True) collapsed A_norm into A_linear with
+  RHS=0, but the correct RHS for that row should be 1 (same as normalization).
+Fix: correct the RHS for all A_linear rows:
+  alpha_k = A_linear[k] @ A_norm_vec / ||A_norm_vec||^2
+  b_corrected = [1; alpha_0, ..., alpha_{3178}]
+  Verified: ||A_full @ pp - b_corrected|| = 1.11e-14 (consistent!), A_norm @ pp = 1.000000.
+  Nonzero alpha entries: 1367/3179 need correction.
+Code change: solver_newton.py lines ~1214-1267: replace fallback-to-relaxed-SDP with
+  corrected RHS computation, yielding 2811-dim null space (full cyclic constraints).
+Status: COMPLETE (diagnostic ran 2026-03-27 ~23:43)
+Result: ADMM-BLAS with 50 iters (corrected 2811-dim null space) still infeasible:
+  status=max_iter_reached, min_eig=-1.564, obj=1.874, max_quad_violation=1.0.
+  Corrected RHS confirmed consistent (||A pp - b||=1.11e-14, A_norm @ pp=1.0).
+  G eigenvalues: min=2.0, max=2.69, cond=1.34 (excellent — G conditioning is NOT bottleneck).
+  ADMM convergence: r_primal: 5.27→2.76 over 50 iters (barely moving); min_eig: -1.57→-1.56.
+  Root cause: ADMM convergence is logarithmic (~1e-5 per step in min_eig); would need
+    ~300K iterations to reach min_eig=0. Not feasible at 0.13s/iter.
+  Conclusion: corrected RHS is mathematically correct; ADMM is not viable for full SDP.
+
+===========================================================================
+ATTEMPT 17: CLARABEL full-dim + all 7 blocks + corrected RHS + max_iter=50
+===========================================================================
+Hypothesis: corrected RHS (A_norm @ pp=1.0) may allow CLARABEL to run past the
+  previous NumericalError point (~24 iters in Attempts 9-10 with inconsistent RHS).
+Config: cvxpy_solver=CLARABEL, maxiters_cvxpy=50, full-dim (3998-var), all 7 PSD blocks
+  [142,16,56,116,116,56,16], static_regularization_constant=1e-7.
+Runtime: 55.8 min (= 50 iters × ~67s/iter). All 7 PSD blocks inflate Schur complement.
+Result: FAILED — param_null.value=None (NumericalError or solver_error).
+Root cause: With corrected RHS, CLARABEL ran ~2× more iterations (50 vs 24) before
+  hitting NumericalError. Static regularization 1e-7 too small to stabilize Schur
+  complement near the PSD boundary with all 7 blocks.
+Key improvement over Attempts 9-10: corrected RHS let CLARABEL run further, but
+  fundamentally the same ill-conditioning issue occurs near PSD boundary.
+
+===========================================================================
+ATTEMPT 18 (CURRENT): CLARABEL + increased static_reg + corrected RHS
+===========================================================================
+Hypothesis: static_regularization_constant=1e-4 (vs 1e-7 before) stabilizes CLARABEL's
+  KKT system near PSD boundary, preventing NumericalError. Solution accuracy reduced to
+  ~1e-4 but that's within the acceptable range for bootstrap bounds (tol~1e-4).
+Fix: add clarabel_static_reg parameter to sdp_minimize_null and solve_bootstrap.
+  Default 1e-7 (unchanged); test with clarabel_static_reg=1e-4.
+Config: cvxpy_solver=CLARABEL, clarabel_static_reg=1e-4, maxiters_cvxpy=50,
+  full-dim (3998-var), all 7 PSD blocks, corrected RHS.
+Runtime: 45.3 min. Iteration time ~90s/iter (Schur complement O(27189 × 3998²) dominates).
+Result: FAILED — param_null.value=None (NumericalError even with static_reg=1e-4).
+Root cause: Static regularization prevents KKT matrix singularity but cannot bound the
+  CONDITION NUMBER near the PSD boundary. The barrier Hessian eigenvalues scale as
+  1/λ_min² where λ_min → 0 at optimum. At iter ~45, the Schur complement is still
+  too ill-conditioned for CLARABEL to compute a usable step direction.
+  Effectively: static_reg pushed NumericalError from iter ~24 (Attempts 9-10) to iter ~45,
+  but didn't prevent it.
+Note: Tested with OLD code (3 redundant SVDs, ~4 min setup vs 1 min with new code).
+
+===========================================================================
+ATTEMPT 19: CLARABEL verbose + new code (single SVD + tol fix) + max_iter=20
+===========================================================================
+Motivation: With tolerance fix (tol = max(1e-5, static_reg × 10) = 1e-3 for static_reg=1e-4),
+  CLARABEL may declare "optimal" before hitting NumericalError (stops when gap < 1e-3).
+  With new code: setup ~1 min (single SVD) + 20 × 90s = ~31 min.
+Config: cvxpy_solver=CLARABEL, clarabel_static_reg=1e-4, max_iter=20, verbose=True.
+Status: KILLED (started 2026-03-28, killed before completion to pursue Burer-Monteiro approach)

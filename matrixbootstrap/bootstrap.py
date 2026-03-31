@@ -56,6 +56,7 @@ class BootstrapSystem(ABC):
         config_cache_path: Optional[str] = None,
         verbose: bool = False,
         fraction_operators_to_retain: float = 1.0,
+        use_invariant_basis: bool = False,
     ):
         self.matrix_system = matrix_system
         self.hamiltonian = hamiltonian
@@ -69,12 +70,15 @@ class BootstrapSystem(ABC):
         self.config_cache_path = config_cache_path
         self.verbose = verbose
         self.fraction_operators_to_retain = fraction_operators_to_retain
+        self.use_invariant_basis = use_invariant_basis
 
         # These are set to None and populated later
         self.null_space_matrix = None
         self.bootstrap_table_sparse = None
         self.bootstrap_basis_list = None
         self.bootstrap_matrix_dim = None
+        # Extra bootstrap tables for non-zero charge sectors (invariant basis only)
+        self.extra_bootstrap_tables = None
         self.linear_constraints = None
         self.quadratic_constraints = None
         self.quadratic_constraints_numerical = None
@@ -218,10 +222,10 @@ class BootstrapSystem(ABC):
             quadratic_constraints_numerical = {}
             quadratic_constraints_numerical["linear"] = load_npz(
                 path + "/quadratic_constraints_numerical_linear_term.npz"
-            ).copy()
+            ).tocsr()
             quadratic_constraints_numerical["quadratic"] = load_npz(
                 path + "/quadratic_constraints_numerical_quadratic_term.npz"
-            ).copy()
+            ).tocsr()
             self.quadratic_constraints_numerical = quadratic_constraints_numerical
             logger.info("  loaded quadratic constraints (numerical)")
 
@@ -1192,7 +1196,7 @@ class BootstrapSystemReal(BootstrapSystem):
 
         bootstrap_dict = {}
         for idx1, op_str1 in enumerate(self.bootstrap_basis_list):
-            op_str1 = op_str1[::-1]  # take the h.c. by reversing the elements
+            op_str1 = self.matrix_system.hermitian_conjugate_tuple(op_str1)  # take h.c.
             for idx2, op_str2 in enumerate(self.bootstrap_basis_list):
 
                 # tally up number of anti-hermitian operators, and add (-1) factor if odd
